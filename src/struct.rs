@@ -183,6 +183,25 @@ impl<T: StructData> NetworkTableData for T {
     }
 }
 
+impl <T: StructData, const S: usize> NetworkTableData for [T; S] {
+    fn data_type() -> DataType {
+        DataType::StructArray(T::type_name())
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        match value {
+            rmpv::Value::Binary(bytes) => T::unpack_array(&mut ByteReader::new(bytes)),
+            _ => None,
+        }
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let mut buf = ByteBuffer::new();
+        T::pack_iter(self, &mut buf);
+        rmpv::Value::Binary(buf.into())
+    }
+}
+
 struct_data! {
     /// Feedforward constants that model a simple arm.
     pub struct ArmFeedforward("ArmFeedforward") {
