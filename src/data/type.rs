@@ -148,10 +148,6 @@ pub enum DataType {
     ///
     /// This is generally used for nested data.
     Msgpack,
-    /// Google Protocol Buffers data type.
-    ///
-    /// Internally, this is stored as a [`Vec<u8>`].
-    Protobuf,
     /// [`Vec<bool>`] data type.
     #[serde(rename = "boolean[]")]
     BooleanArray,
@@ -180,6 +176,13 @@ pub enum DataType {
     #[serde(untagged, serialize_with = "serialize_struct", deserialize_with = "deserialize_struct")]
     Struct(String),
 
+    /// Google Protocol Buffers data type.
+    ///
+    /// Internally, this is stored as a [`Vec<u8>`].
+    #[cfg(feature = "protobuf")]
+    #[serde(untagged, serialize_with = "serialize_protobuf", deserialize_with = "deserialize_protobuf")]
+    Protobuf(String),
+
     /// An unknown data type.
     #[serde(untagged)]
     Unknown(String),
@@ -196,7 +199,7 @@ impl DataType {
     /// - `2`: [`Self::Int`]
     /// - `3`: [`Self::Float`]
     /// - `4`: [`Self::String`]
-    /// - `5`: [`Self::Raw`], [`Self::Rpc`], [`Self::Msgpack`], or [`Self::Protobuf`]
+    /// - `5`: [`Self::Raw`]
     /// - `16`: [`Self::BooleanArray`]
     /// - `17`: [`Self::DoubleArray`]
     /// - `18`: [`Self::IntArray`]
@@ -230,7 +233,7 @@ impl DataType {
     /// - [`Self::Int`] : `2`
     /// - [`Self::Float`] : `3`
     /// - [`Self::String`] or [`Self::Json`] : `4`
-    /// - [`Self::Raw`], [`Self::Rpc`], [`Self::Msgpack`], or [`Self::Protobuf`] : `5`
+    /// - [`Self::Raw`], [`Self::Rpc`], or [`Self::Msgpack`] : `5`
     /// - [`Self::BooleanArray`] : `16`
     /// - [`Self::DoubleArray`] : `17`
     /// - [`Self::IntArray`] : `18`
@@ -249,7 +252,7 @@ impl DataType {
             D::Int => 2,
             D::Float => 3,
             D::String | D::Json => 4,
-            D::Raw | D::Rpc | D::Msgpack | D::Protobuf => 5,
+            D::Raw | D::Rpc | D::Msgpack => 5,
             D::BooleanArray => 16,
             D::DoubleArray => 17,
             D::IntArray => 18,
@@ -259,6 +262,9 @@ impl DataType {
 
             #[cfg(feature = "struct")]
             D::Struct(_) | D::StructArray(_) => 5,
+
+            #[cfg(feature = "protobuf")]
+            D::Protobuf(_) => 5,
         }
     }
 }
@@ -312,7 +318,6 @@ impl_data_type!(JsonString => Json; value @ value.as_str().map(|str| JsonString(
 impl_data_type!(bytes RawData => Raw);
 impl_data_type!(bytes Rpc => Rpc);
 impl_data_type!(rmpv::Value => Msgpack; value @ Some(value.clone()));
-impl_data_type!(bytes Protobuf => Protobuf);
 
 pub(super) fn serialize_as_u32<S>(data_type: &DataType, serializer: S) -> Result<S::Ok, S::Error>
 where S: Serializer
@@ -413,6 +418,40 @@ impl Visitor<'_> for StructDataArrayVisitor {
         let (left, right) = v.split_once(":").ok_or_else(|| serde::de::Error::custom("expected colon in struct type parsing"))?;
         if left != "struct" { return Err(serde::de::Error::custom("expected struct type to be prefixed with `struct:`")); };
         right.strip_suffix("[]").map(str::to_owned).ok_or_else(|| serde::de::Error::custom("expected array type to end with `[]`"))
+    }
+}
+
+#[cfg(feature = "protobuf")]
+fn serialize_protobuf<S>(type_name: &str, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer
+{
+    serializer.serialize_str(&format!("proto:{type_name}"))
+}
+
+#[cfg(feature = "protobuf")]
+fn deserialize_protobuf<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de>
+{
+    deserializer.deserialize_identifier(ProtobufDataVisitor)
+}
+
+#[cfg(feature = "protobuf")]
+struct ProtobufDataVisitor;
+
+#[cfg(feature = "protobuf")]
+impl Visitor<'_> for ProtobufDataVisitor {
+    type Value = String;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a valid protobuf type")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where E: serde::de::Error
+    {
+        let (left, right) = v.split_once(":").ok_or_else(|| serde::de::Error::custom("expected colon in protobuf type parsing"))?;
+        if left != "proto" { return Err(serde::de::Error::custom("expected struct type to be prefixed with `proto:`")); };
+        Ok(right.to_owned())
     }
 }
 

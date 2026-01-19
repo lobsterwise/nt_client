@@ -1,5 +1,7 @@
 //! NetworkTables `struct` pack/unpack support.
 
+// TODO: .schema
+
 use std::mem::MaybeUninit;
 
 use byte::{ByteBuffer, ByteReader};
@@ -8,109 +10,40 @@ use crate::data::r#type::{DataType, NetworkTableData};
 
 pub mod byte;
 
-macro_rules! struct_data {
-    ($(#[$m: meta])* $vis: vis struct $ident: ident ( $n: literal ) { $($(#[$fm: meta])* $f: ident : $ty: tt ),+ $(,)? }) => {
-        $(#[$m])*
-        #[derive(Debug, Clone, Copy, PartialEq)]
-        $vis struct $ident {
-        $(
-            $(#[$fm])*
-            pub $f: struct_data!(@ty $ty),
-        )+
+/// Represents `struct` data that can be sent and received by a `NetworkTables` server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Struct<T>(pub T);
+
+impl<T: StructData> NetworkTableData for Struct<T> {
+    fn data_type() -> DataType {
+        DataType::Struct(T::struct_type_name())
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        match value {
+            rmpv::Value::Binary(bytes) => T::unpack(&mut ByteReader::new(bytes)).map(Self),
+            _ => None,
         }
+    }
 
-        impl StructData for $ident {
-            fn type_name() -> String {
-                $n.to_owned()
-            }
-
-            fn pack(self, buf: &mut ByteBuffer) {
-                $(
-                struct_data!(@pack(buf) $ty, self.$f);
-                )+
-            }
-
-            fn unpack(read: &mut ByteReader) -> Option<Self> {
-                $(
-                let $f = struct_data!(@unpack(read) $ty);
-                )+
-                Some(Self {
-                $(
-                    $f,
-                )+
-                })
-            }
-        }
-    };
-
-    // TYPE MATCHING
-    (@ty $ty: ty) => { $ty };
-
-
-    // PACK MATCHING
-    (@pack($b: ident) i8 , $v: expr) => {
-        $b.write_i8($v);
-    };
-    (@pack($b: ident) i16 , $v: expr) => {
-        $b.write_i16($v);
-    };
-    (@pack($b: ident) i32 , $v: expr) => {
-        $b.write_i32($v);
-    };
-    (@pack($b: ident) i64 , $v: expr) => {
-        $b.write_i64($v);
-    };
-    (@pack($b: ident) isize , $v: expr) => {
-        $b.write_isize($v);
-    };
-
-    (@pack($b: ident) f32 , $v: expr) => {
-        $b.write_f32($v);
-    };
-    (@pack($b: ident) f64 , $v: expr) => {
-        $b.write_f64($v);
-    };
-
-    (@pack($b: ident) $ty: ty , $v: expr) => {
-        $v.pack($b);
-    };
-
-
-    // UNPACK MATCHING
-    (@unpack($b: ident) i8) => {
-        $b.read_i8()?
-    };
-    (@unpack($b: ident) i16) => {
-        $b.read_i16()?
-    };
-    (@unpack($b: ident) i32) => {
-        $b.read_i32()?
-    };
-    (@unpack($b: ident) i64) => {
-        $b.read_i64()?
-    };
-    (@unpack($b: ident) isize) => {
-        $b.read_isize()?
-    };
-
-    (@unpack($b: ident) f32) => {
-        $b.read_f32()?
-    };
-    (@unpack($b: ident) f64) => {
-        $b.read_f64()?
-    };
-
-    (@unpack($b: ident) $ty: ty) => {
-        <$ty>::unpack($b)?
-    };
+    fn into_value(self) -> rmpv::Value {
+        let mut buf = ByteBuffer::new();
+        self.0.pack(&mut buf);
+        rmpv::Value::Binary(buf.into())
+    }
 }
 
 /// Data that can be packed and unpacked from raw bytes, known as a `Struct` in WPILib.
 pub trait StructData {
+    /// Converts self into data that can be sent and received by a `NetworkTables` server.
+    fn into_struct_data(self) -> Struct<Self> where Self: Sized {
+        Struct(self)
+    }
+
     /// Returns the type name of this struct.
     ///
     /// This name will match the actual type name in WPILib.
-    fn type_name() -> String;
+    fn struct_type_name() -> String;
 
     /// Puts object contents to `buf`.
     fn pack(self, buf: &mut ByteBuffer);
@@ -164,28 +97,9 @@ pub trait StructData {
     }
 }
 
-impl<T: StructData> NetworkTableData for T {
-    fn data_type() -> DataType {
-        DataType::Struct(Self::type_name())
-    }
-
-    fn from_value(value: &rmpv::Value) -> Option<Self> where Self: Sized {
-        match value {
-            rmpv::Value::Binary(bytes) => Self::unpack(&mut ByteReader::new(bytes)),
-            _ => None,
-        }
-    }
-
-    fn into_value(self) -> rmpv::Value {
-        let mut buf = ByteBuffer::new();
-        self.pack(&mut buf);
-        rmpv::Value::Binary(buf.into())
-    }
-}
-
 impl <T: StructData, const S: usize> NetworkTableData for [T; S] {
     fn data_type() -> DataType {
-        DataType::StructArray(T::type_name())
+        DataType::StructArray(T::struct_type_name())
     }
 
     fn from_value(value: &rmpv::Value) -> Option<Self> {
@@ -202,553 +116,11 @@ impl <T: StructData, const S: usize> NetworkTableData for [T; S] {
     }
 }
 
-struct_data! {
-    /// Feedforward constants that model a simple arm.
-    pub struct ArmFeedforward("ArmFeedforward") {
-        /// The static gain in volts.
-        k_s: f64,
-        /// The gravity gain in volts.
-        k_g: f64,
-        /// The velocity gain in V/rad/s.
-        k_v: f64,
-        /// The acceleration gain in V/rad/s².
-        k_a: f64,
-        /// The period in seconds.
-        d_t: f64,
-    }
-}
-
-struct_data! {
-    /// Robot chassis speeds.
-    pub struct ChassisSpeeds("ChassisSpeeds") {
-        /// The x velocity in m/s.
-        velocity_x: f64,
-        /// The y velocity in m/s.
-        velocity_y: f64,
-        /// The angular velocity in rad/s.
-        omega: f64,
-    }
-}
-
-/// Represents a hermite spline of degree 3.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CubicHermiteSpline {
-    /// The control vector for the initial point in the x dimension.
-    pub x_initial_control_vector: [f64; 2],
-    /// The control vector for the final point in the x dimension.
-    pub x_final_control_vector: [f64; 2],
-    /// The control vector for the initial point in the y dimension.
-    pub y_initial_control_vector: [f64; 2],
-    /// The control vector for the final point in the y dimension.
-    pub y_final_control_vector: [f64; 2],
-}
-
-impl StructData for CubicHermiteSpline {
-    fn type_name() -> String {
-        "CubicHermiteSpline".to_owned()
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        buf.write_f64(self.x_initial_control_vector[0]);
-        buf.write_f64(self.x_initial_control_vector[1]);
-
-        buf.write_f64(self.x_final_control_vector[0]);
-        buf.write_f64(self.x_final_control_vector[1]);
-
-        buf.write_f64(self.y_initial_control_vector[0]);
-        buf.write_f64(self.y_initial_control_vector[1]);
-
-        buf.write_f64(self.y_final_control_vector[0]);
-        buf.write_f64(self.y_final_control_vector[1]);
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> {
-        let x_initial_control_vector = [read.read_f64()?, read.read_f64()?];
-        let x_final_control_vector = [read.read_f64()?, read.read_f64()?];
-        let y_initial_control_vector = [read.read_f64()?, read.read_f64()?];
-        let y_final_control_vector = [read.read_f64()?, read.read_f64()?];
-
-        Some(Self {
-            x_initial_control_vector,
-            x_final_control_vector,
-            y_initial_control_vector,
-            y_final_control_vector,
-        })
-    }
-}
-
-struct_data! {
-    /// Constants for a DC motor.
-    pub struct DCMotor("DCMotor") {
-        /// Voltage at which the motor constants were measured in volts.
-        nominal_voltage: f64,
-        /// Torque when stalled in newton meters.
-        stall_torque: f64,
-        /// Current draw when stalled in amps.
-        stall_current: f64,
-        /// Current draw under no load in amps.
-        free_current: f64,
-        /// Angular velocity under no load in rad/s.
-        free_speed: f64,
-    }
-}
-
-struct_data! {
-    /// Feedforward constants that model a differential drive drivetrain.
-    pub struct DifferentialDriveFeedforward("DifferentialDriveFeedforward") {
-        /// The linear velocity gain in V/(m/s).
-        velocity_linear: f64,
-        /// The linear acceleration gain in V/(m/s²).
-        acceleration_linear: f64,
-        /// The angular velocity gain in V/(rad/s).
-        velocity_angular: f64,
-        /// The angular acceleration gain in V/(rad/s²).
-        acceleration_angular: f64,
-    }
-}
-
-struct_data! {
-    /// Kinematics for a differential drive.
-    pub struct DifferentialDriveKinematics("DifferentialDriveKinematics") {
-        /// The differential drive track width in meters.
-        track_width: f64,
-    }
-}
-
-struct_data! {
-    /// Represents wheel positions for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelPositions("DifferentialDriveWheelPositions") {
-        /// Distance measured by the left side.
-        left: f64,
-        /// Distance measured by the right side.
-        right: f64,
-    }
-}
-
-struct_data! {
-    /// Represents the wheel speeds for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelSpeeds("DifferentialDriveWheelSpeeds") {
-        /// Speed of the left side of the robot in m/s.
-        left: f64,
-        /// Speed of the right side of the robot in m/s.
-        right: f64,
-    }
-}
-
-struct_data! {
-    /// Represents the motor voltages for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelVoltages("DifferentialDriveWheelVoltages") {
-        /// Left wheel voltage.
-        left: f64,
-        /// Right wheel voltage.
-        right: f64,
-    }
-}
-
-struct_data! {
-    /// Feedforward constants that model a simple elevator.
-    pub struct ElevatorFeedforward("ElevatorFeedforward") {
-        /// The static gain in volts.
-        k_s: f64,
-        /// The gravity gain in volts.
-        k_g: f64,
-        /// The velocity gain in V/(m/s).
-        k_v: f64,
-        /// The acceleration gain in V/(m/s²).
-        k_a: f64,
-        /// The period in seconds.
-        d_t: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a 2D ellipse space containing translational, rotational, and scaling components.
-    pub struct Ellipse2d("Ellipse2d") {
-        /// The center of the ellipse.
-        center: Pose2d,
-        /// The x semi-axis.
-        x_semi_axis: f64,
-        /// The y semi-axis.
-        y_semi_axis: f64,
-    }
-}
-
-/// Represents a plant defined using state-space notation.
-///
-/// A plant is a mathematical model of a system's dynamics.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LinearSystem<const S: usize, const I: usize, const O: usize> {
-    /// The system matrix A.
-    pub a: Matrix<S, S>,
-    /// The system matrix B.
-    pub b: Matrix<S, I>,
-    /// The system matrix C.
-    pub c: Matrix<O, S>,
-    /// The system matrix D.
-    pub d: Matrix<O, I>,
-}
-
-impl<const S: usize, const I: usize, const O: usize> StructData for LinearSystem<S, I, O,> {
-    fn type_name() -> String {
-        format!("LinearSystem__{}_{}_{}", S, I, O)
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        self.a.pack(buf);
-        self.b.pack(buf);
-        self.c.pack(buf);
-        self.d.pack(buf);
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> where Self: Sized {
-        let a = Matrix::unpack(read)?;
-        let b = Matrix::unpack(read)?;
-        let c = Matrix::unpack(read)?;
-        let d = Matrix::unpack(read)?;
-
-        Some(Self { a, b, c, d })
-    }
-}
-
-/// Represents a RxC matrix.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Matrix<const R: usize, const C: usize> {
-    /// The data of the matrix, indexed as `data[row][col]`.
-    pub data: [[f64; C]; R],
-}
-
-impl<const R: usize, const C: usize> StructData for Matrix<R, C> {
-    fn type_name() -> String {
-        format!("Matrix__{}_{}", R, C)
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        self.data.into_iter().flatten().for_each(|value| {
-            buf.write_f64(value);
-        });
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> {
-        let mut data = [[0.0; C]; R];
-        for value in data.iter_mut().flatten() {
-            *value = read.read_f64()?;
-        }
-        Some(Self { data })
-    }
-}
-
-struct_data! {
-    /// Kinematics for a mecanum drive.
-    pub struct MecanumDriveKinematics("MecanumDriveKinematics") {
-        /// The front-left wheel translation.
-        front_left: Translation2d,
-        /// The front-right wheel translation.
-        front_right: Translation2d,
-        /// The rear-right wheel translation.
-        rear_left: Translation2d,
-        /// The rear-left wheel translation.
-        rear_right: Translation2d,
-    }
-}
-
-struct_data! {
-    /// Represents the wheel positions for a mecanum drive drivetrain.
-    pub struct MecanumDriveWheelPositions("MecanumDriveWheelPositions") {
-        /// Distance measured by the front-left wheel in meters.
-        front_left: f64,
-        /// Distance measured by the front-right wheel in meters.
-        front_right: f64,
-        /// Distance measured by the rear-left wheel in meters.
-        rear_left: f64,
-        /// Distance measured by the rear-right wheel in meters.
-        rear_right: f64,
-    }
-}
-
-struct_data! {
-    /// Represents the wheel speeds for a mecanum drive drivetrain.
-    pub struct MecanumDriveWheelSpeeds("MecanumDriveWheelSpeeds") {
-        /// Speed of the front-left wheel in m/s.
-        front_left: f64,
-        /// Speed of the front-right wheel in m/s.
-        front_right: f64,
-        /// Speed of the rear-left wheel in m/s.
-        rear_left: f64,
-        /// Speed of the rear-right wheel in m/s.
-        rear_right: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a 2D pose containing translational and rotational elements.
-    pub struct Pose2d("Pose2d") {
-        /// The translation component of the transformation.
-        translation: Translation2d,
-        /// The rotational component of the transformation.
-        rotation: Rotation2d,
-    }
-}
-
-struct_data! {
-    /// Represents a 3D pose containing translational and rotational elements.
-    pub struct Pose3d("Pose3d") {
-        /// The translation component of the transformation.
-        translation: Translation3d,
-        /// The rotational component of the transformation.
-        rotation: Rotation3d,
-    }
-}
-
-struct_data! {
-    /// Represents a quaternion.
-    pub struct Quaternion("Quaternion") {
-        /// The w component of the quaternion.
-        w: f64,
-        /// The x component of the quaternion.
-        x: f64,
-        /// The y component of the quaternion.
-        y: f64,
-        /// The z component of the quaternion.
-        z: f64,
-    }
-}
-
-/// Represents a hermite spline of degree 5.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct QuinticHermiteSpline {
-    /// The control vector for the initial point in the x dimension.
-    pub x_initial: [f64; 3],
-    /// The control vector for the final point in the x dimension.
-    pub x_final: [f64; 3],
-    /// The control vector for the initial point in the y dimension.
-    pub y_initial: [f64; 3],
-    /// The control vector for the final point in the y dimension.
-    pub y_final: [f64; 3],
-}
-
-impl StructData for QuinticHermiteSpline {
-    fn type_name() -> String {
-        "QuinticHermiteSpline".to_owned()
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        buf.write_f64(self.x_initial[0]);
-        buf.write_f64(self.x_initial[1]);
-        buf.write_f64(self.x_initial[2]);
-
-        buf.write_f64(self.x_final[0]);
-        buf.write_f64(self.x_final[1]);
-        buf.write_f64(self.x_final[2]);
-
-        buf.write_f64(self.y_initial[0]);
-        buf.write_f64(self.y_initial[1]);
-        buf.write_f64(self.y_initial[2]);
-
-        buf.write_f64(self.y_final[0]);
-        buf.write_f64(self.y_final[1]);
-        buf.write_f64(self.y_final[2]);
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> {
-        let x_initial = [read.read_f64()?, read.read_f64()?, read.read_f64()?];
-        let x_final = [read.read_f64()?, read.read_f64()?, read.read_f64()?];
-        let y_initial = [read.read_f64()?, read.read_f64()?, read.read_f64()?];
-        let y_final = [read.read_f64()?, read.read_f64()?, read.read_f64()?];
-
-        Some(Self {
-            x_initial,
-            x_final,
-            y_initial,
-            y_final,
-        })
-    }
-}
-
-struct_data! {
-    /// Represents a 2D rectangular space containing translational, rotational, and scaling components.
-    pub struct Rectangle2d("Rectangle2d") {
-        /// The center of the rectangle.
-        center: Pose2d,
-        /// The x size component of the rectangle.
-        x_width: f64,
-        /// The y size component of the rectangle.
-        y_width: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a rotation in a 2D coordinate frame representd by a point on the unit circle.
-    pub struct Rotation2d("Rotation2d") {
-        /// The rotation in radians.
-        value: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a rotation in a 2D coordinate frame representd by a point on the unit circle.
-    pub struct Rotation3d("Rotation3d") {
-        /// The quaternion representation of the rotation.
-        quaternion: Quaternion,
-    }
-}
-
-struct_data! {
-    /// Feedforward constants that model a simple permanent-magnet DC motor.
-    pub struct SimpleMotorFeedforward("SimpleMotorFeedforward") {
-        /// The static gain in volts.
-        k_s: f64,
-        /// The velocity gain in V/(units/s).
-        k_v: f64,
-        /// The acceleration gain in V/(units/s²).
-        k_a: f64,
-        /// The period in seconds.
-        d_t: f64,
-    }
-}
-
-/// Kinematics for a swerve drive with N modules.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SwerveDriveKinematics<const N: usize> {
-    /// The swerve module locations.
-    pub modules: [Translation2d; N],
-}
-
-impl<const N: usize> StructData for SwerveDriveKinematics<N> {
-    fn type_name() -> String {
-        format!("SwerveDriveKinematics__{}", N)
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        Translation2d::pack_iter(self.modules, buf);
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> {
-        let modules = Translation2d::unpack_array(read)?;
-        Some(Self { modules })
-    }
-}
-
-struct_data! {
-    /// Represents the state of one swerve module.
-    pub struct SwerveModulePosition("SwerveModulePosition") {
-        /// Distance measured by the wheel of the module in meters.
-        distance: f64,
-        /// Angle of the module.
-        angle: Rotation2d,
-    }
-}
-
-struct_data! {
-    /// Represents the state of one swerve module.
-    pub struct SwerveModuleState("SwerveModuleState") {
-        /// The speed of the wheel of the module in m/s.
-        speed: f64,
-        /// The angle of the module.
-        angle: Rotation2d,
-    }
-}
-
-struct_data! {
-    /// Represents a transformation for a Pose2d in the pose's frame.
-    pub struct Transform2d("Transform2d") {
-        /// The translation component of the transformation.
-        translation: Translation2d,
-        /// The rotational component of the transformation.
-        rotation: Rotation2d,
-    }
-}
-
-struct_data! {
-    /// Represents a transformation for a Pose3d in the pose's frame.
-    pub struct Transform3d("Transform3d") {
-        /// The translation component of the transformation.
-        translation: Translation3d,
-        /// The rotational component of the transformation.
-        rotation: Rotation3d,
-    }
-}
-
-struct_data! {
-    /// Represents a translation in 2D space.
-    pub struct Translation2d("Translation2d") {
-        /// The x component of the translation.
-        x: f64,
-        /// The y component of the translation.
-        y: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a translation in 2D space.
-    pub struct Translation3d("Translation3d") {
-        /// The x component of the translation.
-        x: f64,
-        /// The y component of the translation.
-        y: f64,
-        /// The z component of the translation.
-        z: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a change in distance along a 2D arc.
-    pub struct Twist2d("Twist2d") {
-        /// The linear "dx" component.
-        dx: f64,
-        /// The linear "dy" component.
-        dy: f64,
-        /// The linear "dtheta" component in radians.
-        dtheta: f64,
-    }
-}
-
-struct_data! {
-    /// Represents a change in distance along a 3D arc.
-    pub struct Twist3d("Twist3d") {
-        /// The linear "dx" component.
-        dx: f64,
-        /// The linear "dy" component.
-        dy: f64,
-        /// The linear "dz" component.
-        dz: f64,
-        /// The rotation vector x component in radians.
-        rx: f64,
-        /// The rotation vector y component in radians.
-        ry: f64,
-        /// The rotation vector z component in radians.
-        rz: f64,
-    }
-}
-
-/// Represents an N-dimensional Vector.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector<const N: usize> {
-    /// The rows of the vector.
-    pub rows: [f64; N],
-}
-
-impl<const N: usize> StructData for Vector<N> {
-    fn type_name() -> String {
-        format!("Vector__{}", N)
-    }
-
-    fn pack(self, buf: &mut ByteBuffer) {
-        for value in self.rows {
-            buf.write_f64(value);
-        }
-    }
-
-    fn unpack(read: &mut ByteReader) -> Option<Self> {
-        let mut rows = [0.0; N];
-        for value in rows.iter_mut() {
-            *value = read.read_f64()?;
-        }
-        Some(Self { rows })
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "math")]
+    use crate::math::*;
+
     use std::sync::Arc;
 
     use lazy_static::lazy_static;
@@ -757,10 +129,27 @@ mod tests {
 
     #[test]
     fn test_unpack_arr() {
-        struct_data! {
-            struct MyStruct("") {
-                f: f64,
-                u: i32,
+        #[derive(Debug, Clone, PartialEq)]
+        struct MyStruct {
+            f: f64,
+            u: i32,
+        }
+
+        impl StructData for MyStruct {
+            fn struct_type_name() -> String {
+                String::new()
+            }
+
+            fn pack(self, buf: &mut ByteBuffer) {
+                buf.write_f64(self.f);
+                buf.write_i32(self.u);
+            }
+
+            fn unpack(read: &mut ByteReader) -> Option<Self> {
+                Some(Self {
+                    f: read.read_f64()?,
+                    u: read.read_i32()?,
+                })
             }
         }
 
@@ -785,7 +174,7 @@ mod tests {
         }
 
         impl StructData for DropTest {
-            fn type_name() -> String {
+            fn struct_type_name() -> String {
                 String::new()
             }
 
@@ -822,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_armfeedforward() {
         let bytes = [
             0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x02, 0x40,
@@ -838,11 +228,12 @@ mod tests {
             d_t: 1.1,
             k_g: 100.0,
         };
-        assert_eq!(ArmFeedforward::type_name(), "ArmFeedforward");
+        assert_eq!(ArmFeedforward::struct_type_name(), "ArmFeedforward");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_chassisspeeds() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0x4C, 0x34, 0x40,
@@ -855,11 +246,12 @@ mod tests {
             velocity_y: 8.3,
             omega: 11.11,
         };
-        assert_eq!(ChassisSpeeds::type_name(), "ChassisSpeeds");
+        assert_eq!(ChassisSpeeds::struct_type_name(), "ChassisSpeeds");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_cubichermitespline() {
         let bytes = [
             0x8F, 0xC2, 0xF5, 0x28, 0x5C, 0x8F, 0x0A, 0x40,
@@ -878,11 +270,12 @@ mod tests {
             y_final_control_vector: [88.2, 45.22],
             x_final_control_vector: [-33.0, 744.4],
         };
-        assert_eq!(CubicHermiteSpline::type_name(), "CubicHermiteSpline");
+        assert_eq!(CubicHermiteSpline::struct_type_name(), "CubicHermiteSpline");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_dcmotor() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0x28, 0x40,
@@ -899,11 +292,12 @@ mod tests {
             stall_current: 2.2,
             stall_torque: 1.0,
         };
-        assert_eq!(DCMotor::type_name(), "DCMotor");
+        assert_eq!(DCMotor::struct_type_name(), "DCMotor");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_differentialdrivefeedforward() {
         let bytes = [
             0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x24, 0x40,
@@ -918,11 +312,12 @@ mod tests {
             acceleration_angular: 4.0,
             acceleration_linear: 18.44,
         };
-        assert_eq!(DifferentialDriveFeedforward::type_name(), "DifferentialDriveFeedforward");
+        assert_eq!(DifferentialDriveFeedforward::struct_type_name(), "DifferentialDriveFeedforward");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_differentialdrivekinematics() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0x09, 0x40,
@@ -931,11 +326,12 @@ mod tests {
         let r#struct = DifferentialDriveKinematics {
             track_width: 3.2,
         };
-        assert_eq!(DifferentialDriveKinematics::type_name(), "DifferentialDriveKinematics");
+        assert_eq!(DifferentialDriveKinematics::struct_type_name(), "DifferentialDriveKinematics");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_differentialdrivewheelpositions() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x14, 0x40,
@@ -946,11 +342,12 @@ mod tests {
             left: 5.2,
             right: 5.11,
         };
-        assert_eq!(DifferentialDriveWheelPositions::type_name(), "DifferentialDriveWheelPositions");
+        assert_eq!(DifferentialDriveWheelPositions::struct_type_name(), "DifferentialDriveWheelPositions");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_differentialdrivewheelspeeds() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x59, 0x8F, 0x40,
@@ -961,11 +358,12 @@ mod tests {
             left: 1003.2,
             right: -421.0,
         };
-        assert_eq!(DifferentialDriveWheelSpeeds::type_name(), "DifferentialDriveWheelSpeeds");
+        assert_eq!(DifferentialDriveWheelSpeeds::struct_type_name(), "DifferentialDriveWheelSpeeds");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_differentialdrivewheelvoltages() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0x27, 0x40,
@@ -976,11 +374,12 @@ mod tests {
             left: 11.8,
             right: -7.2,
         };
-        assert_eq!(DifferentialDriveWheelVoltages::type_name(), "DifferentialDriveWheelVoltages");
+        assert_eq!(DifferentialDriveWheelVoltages::struct_type_name(), "DifferentialDriveWheelVoltages");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_elevatorfeedforward() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x1C, 0x40,
@@ -997,11 +396,12 @@ mod tests {
             d_t: 0.2,
             k_g: 1.3,
         };
-        assert_eq!(ElevatorFeedforward::type_name(), "ElevatorFeedforward");
+        assert_eq!(ElevatorFeedforward::struct_type_name(), "ElevatorFeedforward");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_ellipse2d() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0x20, 0x40,
@@ -1016,11 +416,28 @@ mod tests {
             y_semi_axis: 3.4,
             x_semi_axis: 8.2,
         };
-        assert_eq!(Ellipse2d::type_name(), "Ellipse2d");
+        assert_eq!(Ellipse2d::struct_type_name(), "Ellipse2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
+    fn test_exponentialprofilestate() {
+        let bytes = [
+            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x06, 0x40,
+            0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0xE1, 0xBF,
+        ];
+
+        let r#struct = ExponentialProfileState {
+            velocity: -0.55,
+            position: 2.8,
+        };
+        assert_eq!(ExponentialProfileState::struct_type_name(), "ExponentialProfileState");
+        test_struct(r#struct, &bytes);
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
     fn test_linearsystem() {
         let bytes = [
             0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x02, 0x40,
@@ -1071,11 +488,12 @@ mod tests {
             c: Matrix { data: [[2.1, 572.6, 3.3], [8.0, -11.0, 3.2]] },
             d: Matrix { data: [[26.1, 5.6, 78.7, 7.1, 44.5], [9.0, 11.0, -283.4, -88.0, 8.22]] },
         };
-        assert_eq!(LinearSystem::<3, 5, 2>::type_name(), "LinearSystem__3_5_2");
+        assert_eq!(LinearSystem::<3, 5, 2>::struct_type_name(), "LinearSystem__3_5_2");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_matrix() {
         let bytes = [
             0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x20, 0xC0,
@@ -1089,11 +507,12 @@ mod tests {
         let r#struct = Matrix::<2, 3> {
             data: [[-8.2, 5.67, 48.2], [4.2, 5.11, 9.5]],
         };
-        assert_eq!(Matrix::<2, 3>::type_name(), "Matrix__2_3");
+        assert_eq!(Matrix::<2, 3>::struct_type_name(), "Matrix__2_3");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_mecanumdrivekinematics() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x00, 0xC0,
@@ -1112,11 +531,12 @@ mod tests {
             rear_left: Translation2d { x: -2.1, y: -8.2 },
             front_left: Translation2d { x: -2.1, y: 4.0 },
         };
-        assert_eq!(MecanumDriveKinematics::type_name(), "MecanumDriveKinematics");
+        assert_eq!(MecanumDriveKinematics::struct_type_name(), "MecanumDriveKinematics");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_mecanumdrivewheelpositions() {
         let bytes = [
             0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x20, 0x40,
@@ -1131,11 +551,12 @@ mod tests {
             rear_left: 9.0,
             front_left: 8.2,
         };
-        assert_eq!(MecanumDriveWheelPositions::type_name(), "MecanumDriveWheelPositions");
+        assert_eq!(MecanumDriveWheelPositions::struct_type_name(), "MecanumDriveWheelPositions");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_mecanumdrivewheelspeeds() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x18, 0x40,
@@ -1150,11 +571,12 @@ mod tests {
             rear_left: 881.0,
             front_left: 6.2,
         };
-        assert_eq!(MecanumDriveWheelSpeeds::type_name(), "MecanumDriveWheelSpeeds");
+        assert_eq!(MecanumDriveWheelSpeeds::struct_type_name(), "MecanumDriveWheelSpeeds");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_pose2d() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0x3C, 0x91, 0xC0,
@@ -1166,11 +588,12 @@ mod tests {
             translation: Translation2d { x: -1103.2, y: -573.55 },
             rotation: Rotation2d { value: 7.44 },
         };
-        assert_eq!(Pose2d::type_name(), "Pose2d");
+        assert_eq!(Pose2d::struct_type_name(), "Pose2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_pose3d() {
         let bytes = [
             0x7B, 0x14, 0xAE, 0x47, 0xE1, 0x7A, 0x0C, 0x40,
@@ -1186,11 +609,12 @@ mod tests {
             translation: Translation3d { x: 3.56, y: 6.8, z: 4.4 },
             rotation: Rotation3d { quaternion: Quaternion { w: 0.2618614682831908, x: 0.08728715609439694, y: -0.04364357804719847, z: 0.9601587170383664 } },
         };
-        assert_eq!(Pose3d::type_name(), "Pose3d");
+        assert_eq!(Pose3d::struct_type_name(), "Pose3d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_quaternion() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x23, 0x40,
@@ -1205,11 +629,12 @@ mod tests {
             y: 5.6,
             z: 55.3,
         };
-        assert_eq!(Quaternion::type_name(), "Quaternion");
+        assert_eq!(Quaternion::struct_type_name(), "Quaternion");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_quintichermitespline() {
         let bytes = [
             0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x15, 0x40,
@@ -1232,11 +657,12 @@ mod tests {
             y_final: [11.3, 8.5, 4.6],
             x_initial: [5.3, 4.11, 9.01],
         };
-        assert_eq!(QuinticHermiteSpline::type_name(), "QuinticHermiteSpline");
+        assert_eq!(QuinticHermiteSpline::struct_type_name(), "QuinticHermiteSpline");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_rectangle2d() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x21, 0x40,
@@ -1251,11 +677,12 @@ mod tests {
             center: Pose2d { translation: Translation2d { x: 8.9, y: 14.4 }, rotation: Rotation2d { value: 0.0 } },
             y_width: 9.6,
         };
-        assert_eq!(Rectangle2d::type_name(), "Rectangle2d");
+        assert_eq!(Rectangle2d::struct_type_name(), "Rectangle2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_rotation2d() {
         let bytes = [
             0xE1, 0x7A, 0x14, 0xAE, 0x47, 0xE1, 0x20, 0x40,
@@ -1264,11 +691,12 @@ mod tests {
         let r#struct = Rotation2d {
             value: 8.44,
         };
-        assert_eq!(Rotation2d::type_name(), "Rotation2d");
+        assert_eq!(Rotation2d::struct_type_name(), "Rotation2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_rotation3d() {
         let bytes = [
             0xF7, 0xC6, 0x57, 0x88, 0x7B, 0xA7, 0xC8, 0x3F,
@@ -1280,11 +708,12 @@ mod tests {
         let r#struct = Rotation3d {
             quaternion: Quaternion { w: 0.19261116177909063, x: 0.44140057907708274, y: 0.6982154614492035, z: 0.5296806948924992 },
         };
-        assert_eq!(Rotation3d::type_name(), "Rotation3d");
+        assert_eq!(Rotation3d::struct_type_name(), "Rotation3d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_simplemotorfeedforward() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0xF1, 0x3F,
@@ -1299,11 +728,12 @@ mod tests {
             k_v: 0.66,
             k_a: 18.3,
         };
-        assert_eq!(SimpleMotorFeedforward::type_name(), "SimpleMotorFeedforward");
+        assert_eq!(SimpleMotorFeedforward::struct_type_name(), "SimpleMotorFeedforward");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_swervedrivekinematics() {
         let bytes = [
             0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x11, 0x40,
@@ -1319,11 +749,12 @@ mod tests {
         let r#struct = SwerveDriveKinematics::<4> {
             modules: [Translation2d { x: 4.3, y: 6.6 }, Translation2d { x: -5.0, y: 6.6 }, Translation2d { x: 4.3, y: -9.9 }, Translation2d { x: -5.0, y: -9.9 }],
         };
-        assert_eq!(SwerveDriveKinematics::<4>::type_name(), "SwerveDriveKinematics__4");
+        assert_eq!(SwerveDriveKinematics::<4>::struct_type_name(), "SwerveDriveKinematics__4");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_swervemoduleposition() {
         let bytes = [
             0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x00, 0x40,
@@ -1334,11 +765,12 @@ mod tests {
             angle: Rotation2d { value: 0.79 },
             distance: 2.1,
         };
-        assert_eq!(SwerveModulePosition::type_name(), "SwerveModulePosition");
+        assert_eq!(SwerveModulePosition::struct_type_name(), "SwerveModulePosition");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_swervemodulestate() {
         let bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x40,
@@ -1350,11 +782,12 @@ mod tests {
             #[allow(clippy::approx_constant)]
             angle: Rotation2d { value: 3.1415 },
         };
-        assert_eq!(SwerveModuleState::type_name(), "SwerveModuleState");
+        assert_eq!(SwerveModuleState::struct_type_name(), "SwerveModuleState");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_transform2d() {
         let bytes = [
             0xC3, 0xF5, 0x28, 0x5C, 0x8F, 0xC2, 0x09, 0x40,
@@ -1366,11 +799,12 @@ mod tests {
             translation: Translation2d { x: 3.22, y: 6.45 },
             rotation: Rotation2d { value: 9.22 },
         };
-        assert_eq!(Transform2d::type_name(), "Transform2d");
+        assert_eq!(Transform2d::struct_type_name(), "Transform2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_transform3d() {
         let bytes = [
             0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x03, 0xC0,
@@ -1386,11 +820,12 @@ mod tests {
             translation: Translation3d { x: -2.4, y: 5.87, z: 9.1 },
             rotation: Rotation3d { quaternion: Quaternion { w: 0.6786709561586338, x: 0.3098280452028546, y: -0.6646549255423143, z: 0.04057272020513573 } },
         };
-        assert_eq!(Transform3d::type_name(), "Transform3d");
+        assert_eq!(Transform3d::struct_type_name(), "Transform3d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_translation2d() {
         let bytes = [
             0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x20, 0x40,
@@ -1401,11 +836,12 @@ mod tests {
             x: 8.1,
             y: 1.44,
         };
-        assert_eq!(Translation2d::type_name(), "Translation2d");
+        assert_eq!(Translation2d::struct_type_name(), "Translation2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_translation3d() {
         let bytes = [
             0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x22, 0x40,
@@ -1418,11 +854,28 @@ mod tests {
             y: 6.9,
             z: 4.24,
         };
-        assert_eq!(Translation3d::type_name(), "Translation3d");
+        assert_eq!(Translation3d::struct_type_name(), "Translation3d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
+    fn test_trapezoidprofilestate() {
+        let bytes = [
+            0xCD, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x56, 0x40,
+            0xAE, 0x47, 0xE1, 0x7A, 0x14, 0x8E, 0x41, 0x40,
+        ];
+
+        let r#struct = TrapezoidProfileState {
+            velocity: 35.11,
+            position: 91.2,
+        };
+        assert_eq!(TrapezoidProfileState::struct_type_name(), "TrapezoidProfileState");
+        test_struct(r#struct, &bytes);
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
     fn test_twist2d() {
         let bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40,
@@ -1435,11 +888,12 @@ mod tests {
             dy: 1.33,
             dtheta: 74.7,
         };
-        assert_eq!(Twist2d::type_name(), "Twist2d");
+        assert_eq!(Twist2d::struct_type_name(), "Twist2d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_twist3d() {
         let bytes = [
             0x9A, 0x99, 0x99, 0x99, 0x99, 0x99, 0xD9, 0x3F,
@@ -1458,11 +912,12 @@ mod tests {
             dz: 8.22,
             rx: 5.4,
         };
-        assert_eq!(Twist3d::type_name(), "Twist3d");
+        assert_eq!(Twist3d::struct_type_name(), "Twist3d");
         test_struct(r#struct, &bytes);
     }
 
     #[test]
+    #[cfg(feature = "math")]
     fn test_vector() {
         let bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x40,
@@ -1473,7 +928,7 @@ mod tests {
         let r#struct = Vector::<3> {
             rows: [4.5, -0.6, 7.99],
         };
-        assert_eq!(Vector::<3>::type_name(), "Vector__3");
+        assert_eq!(Vector::<3>::struct_type_name(), "Vector__3");
         test_struct(r#struct, &bytes);
     }
 

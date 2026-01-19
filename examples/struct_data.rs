@@ -1,6 +1,6 @@
-//! An example serializing and deserializing binary "structs" using the `struct` feature flag.
+//! An example serializing and deserializing binary "structs" using the `struct` and `math` feature flag.
 
-use nt_client::{data::{r#type::{DataType, NetworkTableData}, Properties}, r#struct::{ArmFeedforward, StructData}, subscribe::ReceivedMessage, Client};
+use nt_client::{Client, data::{Properties, r#type::{DataType, NetworkTableData}}, math::ArmFeedforward, r#struct::{Struct, StructData}, subscribe::ReceivedMessage};
 
 #[tokio::main]
 async fn main() {
@@ -14,7 +14,7 @@ fn setup(client: &Client) {
     tokio::spawn(async move {
         // publish arm feedforward constants (raw binary)
         // set it to retained since the publisher will be dropped after the value is set
-        let publisher = pub_topic.publish::<ArmFeedforward>(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
+        let publisher = pub_topic.publish::<Struct<ArmFeedforward>>(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
 
         let feedforward = ArmFeedforward {
             k_s: 8.2,
@@ -23,7 +23,7 @@ fn setup(client: &Client) {
             k_a: 9.22,
             d_t: 0.1,
         };
-        publisher.set(feedforward).await.unwrap();
+        publisher.set(feedforward.into_struct_data()).await.unwrap();
     });
 
     let sub_topic = client.topic("/serverfeedforward");
@@ -35,9 +35,9 @@ fn setup(client: &Client) {
             if let ReceivedMessage::Updated((topic, value)) = message {
                 match topic.r#type() {
                     // check to make sure the data type is correct
-                    DataType::Struct(type_name) if type_name == &ArmFeedforward::type_name() => {
-                        let r#struct = ArmFeedforward::from_value(&value).expect("valid feedforward struct");
-                        println!("Got feedforward: {struct:?}");
+                    DataType::Struct(type_name) if type_name == &ArmFeedforward::struct_type_name() => {
+                        let feedforward = <Struct<ArmFeedforward>>::from_value(&value).expect("valid feedforward struct").0;
+                        println!("Got feedforward: {feedforward:?}");
                     }
                     _ => println!("Not a feedforward"),
                 }

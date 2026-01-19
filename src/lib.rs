@@ -42,7 +42,11 @@
 //! ```
 //!
 //! # Feature flags
-//! - `struct`: adds support for struct parsing of common classes used in WPILib.
+//! - `math`: adds various common data types in wpimath.
+//! - `struct`: adds support for struct packing and unpacking, as well as implementing most data
+//!   types enabled by the `math` feature.
+//! - `protobuf`: adds support for Google protobuf packing and unpacking, as well as implementing most data
+//!   types enabled by the `math` feature.
 //! - `publish_bypass`: adds bypass versions of [`Topic::publish`] and [`Topic::generic_publish`] that do not wait for a server response.
 //!   This is to serve as a workaround to [issue #7680][issue #7680].
 //!   Once that bug is fixed, this feature will likely be deprecated and/or removed.
@@ -68,8 +72,14 @@ pub mod topic;
 pub mod subscribe;
 pub mod publish;
 
+#[cfg(feature = "math")]
+pub mod math;
+
 #[cfg(feature = "struct")]
 pub mod r#struct;
+
+#[cfg(feature = "protobuf")]
+pub mod protobuf;
 
 pub(crate) type NTServerSender = broadcast::Sender<Arc<ServerboundMessage>>;
 pub(crate) type NTServerReceiver = broadcast::Receiver<Arc<ServerboundMessage>>;

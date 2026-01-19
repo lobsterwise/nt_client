@@ -7,18 +7,25 @@ repository = "https://github.com/DatAsianBoi123/nt_client"
 license = "MIT"
 keywords = ["wpi", "wpilib", "networktables", "NT"]
 categories = ["api-bindings"]
+build = "build.rs"
 
 [lib]
 name = "nt_client"
 path = "src/lib.rs"
 
 [features]
+math = []
 struct = []
+protobuf = ["dep:protobuf", "dep:protobuf-codegen", "dep:protoc-bin-vendored"]
 publish_bypass = []
 
 [[example]]
 name = "struct_data"
-required-features = ["struct"]
+required-features = ["struct", "math"]
+
+[[example]]
+name = "protobuf"
+required-features = ["protobuf", "math"]
 
 [dependencies]
 futures-util = { version = "0.3.30", default-features = false, features = ["sink", "std"] }
@@ -32,6 +39,12 @@ time = "0.3.36"
 tokio = { version = "1.39.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
 tracing = "0.1.40"
+
+protobuf = { version = "3.7.2", optional = true }
+
+[build-dependencies]
+protobuf-codegen = { version = "3.7.2", optional = true }
+protoc-bin-vendored = { version = "3.1.0", optional = true }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
