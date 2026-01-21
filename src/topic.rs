@@ -109,8 +109,23 @@ impl Topic {
         &mut self.name
     }
 
-    /// Creates a child topic
-    pub fn child(&self, name: &str) -> Self{
+    /// Creates a child topic with a suffix.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use nt_client::Client;
+    ///
+    /// let client = Client::new(Default::default());
+    ///
+    /// let root_topic = client.topic("/SmartDashboard");
+    /// let number_topic = root_topic.child("/mynumber");
+    /// let boolean_topic = root_topic.child("/myboolean");
+    ///
+    /// assert_eq!(root_topic.name(), "/SmartDashboard");
+    /// assert_eq!(number_topic.name(), "/SmartDashboard/mynumber");
+    /// assert_eq!(boolean_topic.name(), "/SmartDashboard/myboolean");
+    /// ```
+    pub fn child(&self, name: &str) -> Self {
         Self::new(self.name.clone() + name, self.handle.clone())
     }
 
