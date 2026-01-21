@@ -97,21 +97,21 @@ pub trait StructData {
     }
 }
 
-impl <T: StructData, const S: usize> NetworkTableData for [T; S] {
+impl <T: StructData, const S: usize> NetworkTableData for [Struct<T>; S] {
     fn data_type() -> DataType {
         DataType::StructArray(T::struct_type_name())
     }
 
     fn from_value(value: &rmpv::Value) -> Option<Self> {
         match value {
-            rmpv::Value::Binary(bytes) => T::unpack_array(&mut ByteReader::new(bytes)),
+            rmpv::Value::Binary(bytes) => T::unpack_array(&mut ByteReader::new(bytes)).map(|array| array.map(Struct)),
             _ => None,
         }
     }
 
     fn into_value(self) -> rmpv::Value {
         let mut buf = ByteBuffer::new();
-        T::pack_iter(self, &mut buf);
+        T::pack_iter(self.map(|r#struct| r#struct.0), &mut buf);
         rmpv::Value::Binary(buf.into())
     }
 }
