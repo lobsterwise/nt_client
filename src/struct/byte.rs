@@ -144,7 +144,7 @@ impl ByteBuffer {
 /// // reads are immutable and start from the beginning of the view
 /// let mut reader = ByteReader::new(&vec);
 /// assert_eq!(reader.read_i8(), Some(5));
-/// // each read inrements the internal cursor, allowing sequential read calls
+/// // each read increments the internal cursor, allowing sequential read calls
 /// assert_eq!(reader.read_i32(), Some(-5001));
 /// assert_eq!(reader.read_f32(), Some(28.17));
 /// assert_eq!(reader.read_f64(), None);
