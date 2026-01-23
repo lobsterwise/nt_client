@@ -9,6 +9,7 @@ use byte::{ByteBuffer, ByteReader};
 use crate::data::r#type::{DataType, NetworkTableData};
 
 pub mod byte;
+pub mod parse;
 
 /// Represents `struct` data that can be sent and received by a `NetworkTables` server.
 #[derive(Debug, Clone, PartialEq, Eq)]
