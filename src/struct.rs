@@ -46,6 +46,9 @@ pub trait StructData {
     /// This name will match the actual type name in WPILib.
     fn struct_type_name() -> String;
 
+    /// Returns the struct schema.
+    fn schema() -> String;
+
     /// Puts object contents to `buf`.
     fn pack(self, buf: &mut ByteBuffer);
 
@@ -137,6 +140,10 @@ mod tests {
         }
 
         impl StructData for MyStruct {
+            fn schema() -> String {
+                String::new()
+            }
+
             fn struct_type_name() -> String {
                 String::new()
             }

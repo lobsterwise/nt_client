@@ -7,7 +7,7 @@ use crate::protobuf::{ProtobufData, controller::*, geometry2d::*, geometry3d::*,
 use crate::r#struct::{StructData, byte::{ByteBuffer, ByteReader}};
 
 macro_rules! data {
-    ($(#[$m: meta])* $vis: vis struct $ident: ident ( $n: literal ) for $proto: ident { $($(#[$fm: meta])* $f: ident ( $p: ident ) : $ty: tt ),+ $(,)? }) => {
+    ($(#[$m: meta])* $vis: vis struct $ident: ident ( $n: literal , $s: literal ) for $proto: ident { $($(#[$fm: meta])* $f: ident ( $p: ident ) : $ty: tt ),+ $(,)? }) => {
         $(#[$m])*
         #[derive(Debug, Clone, Copy, PartialEq)]
         $vis struct $ident {
@@ -19,6 +19,10 @@ macro_rules! data {
 
         #[cfg(feature = "struct")]
         impl $crate::r#struct::StructData for $ident {
+            fn schema() -> String {
+                $s.to_owned()
+            }
+
             fn struct_type_name() -> String {
                 $n.to_owned()
             }
@@ -144,7 +148,7 @@ macro_rules! data {
 
 data! {
     /// Feedforward constants that model a simple arm.
-    pub struct ArmFeedforward("ArmFeedforward") for ProtobufArmFeedforward {
+    pub struct ArmFeedforward("ArmFeedforward", "double ks;double kg;double ka;double dt") for ProtobufArmFeedforward {
         /// The static gain in volts.
         k_s(ks): f64,
         /// The gravity gain in volts.
@@ -160,7 +164,7 @@ data! {
 
 data! {
     /// Robot chassis speeds.
-    pub struct ChassisSpeeds("ChassisSpeeds") for ProtobufChassisSpeeds {
+    pub struct ChassisSpeeds("ChassisSpeeds", "double vx;double vy;double omega") for ProtobufChassisSpeeds {
         /// The x velocity in m/s.
         velocity_x(vx): f64,
         /// The y velocity in m/s.
@@ -185,6 +189,10 @@ pub struct CubicHermiteSpline {
 
 #[cfg(feature = "struct")]
 impl StructData for CubicHermiteSpline {
+    fn schema() -> String {
+        "double xInitial[2];double xFinal[2];double yInitial[2];double yFinal[2]".to_owned()
+    }
+
     fn struct_type_name() -> String {
         "CubicHermiteSpline".to_owned()
     }
@@ -244,7 +252,7 @@ impl ProtobufData for CubicHermiteSpline {
 
 data! {
     /// Constants for a DC motor.
-    pub struct DCMotor("DCMotor") for ProtobufDCMotor {
+    pub struct DCMotor("DCMotor", "double ks;double kv;double ka;double dt") for ProtobufDCMotor {
         /// Voltage at which the motor constants were measured in volts.
         nominal_voltage(nominal_voltage): f64,
         /// Torque when stalled in newton meters.
@@ -260,7 +268,10 @@ data! {
 
 data! {
     /// Feedforward constants that model a differential drive drivetrain.
-    pub struct DifferentialDriveFeedforward("DifferentialDriveFeedforward") for ProtobufDifferentialDriveFeedforward {
+    pub struct DifferentialDriveFeedforward(
+        "DifferentialDriveFeedforward",
+        "double kVLinear;double kALinear;double kVAngular;double kAAngular"
+    ) for ProtobufDifferentialDriveFeedforward {
         /// The linear velocity gain in V/(m/s).
         velocity_linear(kv_linear): f64,
         /// The linear acceleration gain in V/(m/s²).
@@ -274,7 +285,7 @@ data! {
 
 data! {
     /// Kinematics for a differential drive.
-    pub struct DifferentialDriveKinematics("DifferentialDriveKinematics") for ProtobufDifferentialDriveKinematics {
+    pub struct DifferentialDriveKinematics("DifferentialDriveKinematics", "double track_width") for ProtobufDifferentialDriveKinematics {
         /// The differential drive track width in meters.
         track_width(track_width): f64,
     }
@@ -282,7 +293,7 @@ data! {
 
 data! {
     /// Represents wheel positions for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelPositions("DifferentialDriveWheelPositions") for ProtobufDifferentialDriveWheelPositions {
+    pub struct DifferentialDriveWheelPositions("DifferentialDriveWheelPositions", "double left;double right") for ProtobufDifferentialDriveWheelPositions {
         /// Distance measured by the left side.
         left(left): f64,
         /// Distance measured by the right side.
@@ -292,7 +303,7 @@ data! {
 
 data! {
     /// Represents the wheel speeds for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelSpeeds("DifferentialDriveWheelSpeeds") for ProtobufDifferentialDriveWheelSpeeds {
+    pub struct DifferentialDriveWheelSpeeds("DifferentialDriveWheelSpeeds", "double left;double right") for ProtobufDifferentialDriveWheelSpeeds {
         /// Speed of the left side of the robot in m/s.
         left(left): f64,
         /// Speed of the right side of the robot in m/s.
@@ -302,7 +313,7 @@ data! {
 
 data! {
     /// Represents the motor voltages for a differential drive drivetrain.
-    pub struct DifferentialDriveWheelVoltages("DifferentialDriveWheelVoltages") for ProtobufDifferentialDriveWheelVoltages {
+    pub struct DifferentialDriveWheelVoltages("DifferentialDriveWheelVoltages", "double left;double right") for ProtobufDifferentialDriveWheelVoltages {
         /// Left wheel voltage.
         left(left): f64,
         /// Right wheel voltage.
@@ -312,7 +323,7 @@ data! {
 
 data! {
     /// Feedforward constants that model a simple elevator.
-    pub struct ElevatorFeedforward("ElevatorFeedforward") for ProtobufElevatorFeedforward {
+    pub struct ElevatorFeedforward("ElevatorFeedforward", "double ks;double kg;double kv;double ka;double dt") for ProtobufElevatorFeedforward {
         /// The static gain in volts.
         k_s(ks): f64,
         /// The gravity gain in volts.
@@ -328,7 +339,7 @@ data! {
 
 data! {
     /// Represents a 2D ellipse space containing translational, rotational, and scaling components.
-    pub struct Ellipse2d("Ellipse2d") for ProtobufEllipse2d {
+    pub struct Ellipse2d("Ellipse2d", "Pose2d center;double xSemiAxis;double ySemiAxis") for ProtobufEllipse2d {
         /// The center of the ellipse.
         center(center): Pose2d,
         /// The x semi-axis.
@@ -349,6 +360,10 @@ pub struct ExponentialProfileState {
 
 #[cfg(feature = "struct")]
 impl StructData for ExponentialProfileState {
+    fn schema() -> String {
+        "double position;double velocity".to_owned()
+    }
+
     fn struct_type_name() -> String {
         "ExponentialProfileState".to_owned()
     }
@@ -383,6 +398,16 @@ pub struct LinearSystem<const S: usize, const I: usize, const O: usize> {
 
 #[cfg(feature = "struct")]
 impl<const S: usize, const I: usize, const O: usize> StructData for LinearSystem<S, I, O,> {
+    fn schema() -> String {
+        format!(
+            "{} a;{} b;{} c;{} d",
+            <Matrix<S, S>>::struct_type_name(),
+            <Matrix<S, I>>::struct_type_name(),
+            <Matrix<O, S>>::struct_type_name(),
+            <Matrix<O, I>>::struct_type_name(),
+        )
+    }
+
     fn struct_type_name() -> String {
         format!("LinearSystem__{}_{}_{}", S, I, O)
     }
@@ -440,6 +465,10 @@ pub struct Matrix<const R: usize, const C: usize> {
 
 #[cfg(feature = "struct")]
 impl<const R: usize, const C: usize> StructData for Matrix<R, C> {
+    fn schema() -> String {
+        format!("double data[{}]", R * C)
+    }
+
     fn struct_type_name() -> String {
         format!("Matrix__{}_{}", R, C)
     }
@@ -488,7 +517,10 @@ impl<const R: usize, const C: usize> ProtobufData for Matrix<R, C> {
 
 data! {
     /// Kinematics for a mecanum drive.
-    pub struct MecanumDriveKinematics("MecanumDriveKinematics") for ProtobufMecanumDriveKinematics {
+    pub struct MecanumDriveKinematics(
+        "MecanumDriveKinematics",
+        "Translation2d front_left;Translation2d front_right;Translation2d rear_left;Translation2d rear_right"
+    ) for ProtobufMecanumDriveKinematics {
         /// The front-left wheel translation.
         front_left(front_left): Translation2d,
         /// The front-right wheel translation.
@@ -502,7 +534,10 @@ data! {
 
 data! {
     /// Represents the wheel positions for a mecanum drive drivetrain.
-    pub struct MecanumDriveWheelPositions("MecanumDriveWheelPositions") for ProtobufMecanumDriveWheelPositions {
+    pub struct MecanumDriveWheelPositions(
+        "MecanumDriveWheelPositions",
+        "double front_left;double front_right;double rear_left;double rear_right"
+    ) for ProtobufMecanumDriveWheelPositions {
         /// Distance measured by the front-left wheel in meters.
         front_left(front_left): f64,
         /// Distance measured by the front-right wheel in meters.
@@ -516,7 +551,7 @@ data! {
 
 data! {
     /// Represents the wheel speeds for a mecanum drive drivetrain.
-    pub struct MecanumDriveWheelSpeeds("MecanumDriveWheelSpeeds") for ProtobufMecanumDriveWheelSpeeds {
+    pub struct MecanumDriveWheelSpeeds("MecanumDriveWheelSpeeds", "double front_left;double front_right;double rear_left;double rear_right") for ProtobufMecanumDriveWheelSpeeds {
         /// Speed of the front-left wheel in m/s.
         front_left(front_left): f64,
         /// Speed of the front-right wheel in m/s.
@@ -530,7 +565,7 @@ data! {
 
 data! {
     /// Represents a 2D pose containing translational and rotational elements.
-    pub struct Pose2d("Pose2d") for ProtobufPose2d {
+    pub struct Pose2d("Pose2d", "Translation2d translation;Rotation2d rotation") for ProtobufPose2d {
         /// The translation component of the transformation.
         translation(translation): Translation2d,
         /// The rotational component of the transformation.
@@ -540,7 +575,7 @@ data! {
 
 data! {
     /// Represents a 3D pose containing translational and rotational elements.
-    pub struct Pose3d("Pose3d") for ProtobufPose3d {
+    pub struct Pose3d("Pose3d", "Translation3d translation;Rotation3d rotation") for ProtobufPose3d {
         /// The translation component of the transformation.
         translation(translation): Translation3d,
         /// The rotational component of the transformation.
@@ -550,7 +585,7 @@ data! {
 
 data! {
     /// Represents a quaternion.
-    pub struct Quaternion("Quaternion") for ProtobufQuaternion {
+    pub struct Quaternion("Quaternion", "double w;double x;double y;double z") for ProtobufQuaternion {
         /// The w component of the quaternion.
         w(w): f64,
         /// The x component of the quaternion.
@@ -577,6 +612,10 @@ pub struct QuinticHermiteSpline {
 
 #[cfg(feature = "struct")]
 impl StructData for QuinticHermiteSpline {
+    fn schema() -> String {
+        "double xInitial[3];double xFinal[3];double yInitial[3];double yFinal[3]".to_owned()
+    }
+
     fn struct_type_name() -> String {
         "QuinticHermiteSpline".to_owned()
     }
@@ -640,7 +679,7 @@ impl ProtobufData for QuinticHermiteSpline {
 
 data! {
     /// Represents a 2D rectangular space containing translational, rotational, and scaling components.
-    pub struct Rectangle2d("Rectangle2d") for ProtobufRectangle2d {
+    pub struct Rectangle2d("Rectangle2d", "Pose2d center;double xWidth;double yWidth") for ProtobufRectangle2d {
         /// The center of the rectangle.
         center(center): Pose2d,
         /// The x size component of the rectangle.
@@ -652,7 +691,7 @@ data! {
 
 data! {
     /// Represents a rotation in a 2D coordinate frame representd by a point on the unit circle.
-    pub struct Rotation2d("Rotation2d") for ProtobufRotation2d {
+    pub struct Rotation2d("Rotation2d", "double value") for ProtobufRotation2d {
         /// The rotation in radians.
         value(value): f64,
     }
@@ -660,7 +699,7 @@ data! {
 
 data! {
     /// Represents a rotation in a 2D coordinate frame representd by a point on the unit circle.
-    pub struct Rotation3d("Rotation3d") for ProtobufRotation3d {
+    pub struct Rotation3d("Rotation3d", "Quaternion q") for ProtobufRotation3d {
         /// The quaternion representation of the rotation.
         quaternion(q): Quaternion,
     }
@@ -668,7 +707,7 @@ data! {
 
 data! {
     /// Feedforward constants that model a simple permanent-magnet DC motor.
-    pub struct SimpleMotorFeedforward("SimpleMotorFeedforward") for ProtobufSimpleMotorFeedforward {
+    pub struct SimpleMotorFeedforward("SimpleMotorFeedforward", "double ks;double kv;double ka;double dt") for ProtobufSimpleMotorFeedforward {
         /// The static gain in volts.
         k_s(ks): f64,
         /// The velocity gain in V/(units/s).
@@ -689,6 +728,10 @@ pub struct SwerveDriveKinematics<const N: usize> {
 
 #[cfg(feature = "struct")]
 impl<const N: usize> StructData for SwerveDriveKinematics<N> {
+    fn schema() -> String {
+        format!("Translation2d modules[{N}]")
+    }
+
     fn struct_type_name() -> String {
         format!("SwerveDriveKinematics__{}", N)
     }
@@ -729,7 +772,7 @@ impl<const N: usize> ProtobufData for SwerveDriveKinematics<N> {
 
 data! {
     /// Represents the state of one swerve module.
-    pub struct SwerveModulePosition("SwerveModulePosition") for ProtobufSwerveModulePosition {
+    pub struct SwerveModulePosition("SwerveModulePosition", "double distance;Rotation2d angle") for ProtobufSwerveModulePosition {
         /// Distance measured by the wheel of the module in meters.
         distance(distance): f64,
         /// Angle of the module.
@@ -739,7 +782,7 @@ data! {
 
 data! {
     /// Represents the state of one swerve module.
-    pub struct SwerveModuleState("SwerveModuleState") for ProtobufSwerveModuleState {
+    pub struct SwerveModuleState("SwerveModuleState", "double speed;Rotation2d angle") for ProtobufSwerveModuleState {
         /// The speed of the wheel of the module in m/s.
         speed(speed): f64,
         /// The angle of the module.
@@ -819,7 +862,7 @@ impl ProtobufData for TrajectoryState {
 
 data! {
     /// Represents a transformation for a Pose2d in the pose's frame.
-    pub struct Transform2d("Transform2d") for ProtobufTransform2d {
+    pub struct Transform2d("Transform2d", "Translation2d translation;Rotation2d rotation") for ProtobufTransform2d {
         /// The translation component of the transformation.
         translation(translation): Translation2d,
         /// The rotational component of the transformation.
@@ -829,7 +872,7 @@ data! {
 
 data! {
     /// Represents a transformation for a Pose3d in the pose's frame.
-    pub struct Transform3d("Transform3d") for ProtobufTransform3d {
+    pub struct Transform3d("Transform3d", "Translation3d translation;Rotation3d rotation") for ProtobufTransform3d {
         /// The translation component of the transformation.
         translation(translation): Translation3d,
         /// The rotational component of the transformation.
@@ -839,7 +882,7 @@ data! {
 
 data! {
     /// Represents a translation in 2D space.
-    pub struct Translation2d("Translation2d") for ProtobufTranslation2d {
+    pub struct Translation2d("Translation2d", "double x;double y") for ProtobufTranslation2d {
         /// The x component of the translation.
         x(x): f64,
         /// The y component of the translation.
@@ -849,7 +892,7 @@ data! {
 
 data! {
     /// Represents a translation in 2D space.
-    pub struct Translation3d("Translation3d") for ProtobufTranslation3d {
+    pub struct Translation3d("Translation3d", "double x;double y;double z") for ProtobufTranslation3d {
         /// The x component of the translation.
         x(x): f64,
         /// The y component of the translation.
@@ -870,6 +913,10 @@ pub struct TrapezoidProfileState {
 
 #[cfg(feature = "struct")]
 impl StructData for TrapezoidProfileState {
+    fn schema() -> String {
+        "double position;double velocity".to_owned()
+    }
+
     fn struct_type_name() -> String {
         "TrapezoidProfileState".to_owned()
     }
@@ -889,7 +936,7 @@ impl StructData for TrapezoidProfileState {
 
 data! {
     /// Represents a change in distance along a 2D arc.
-    pub struct Twist2d("Twist2d") for ProtobufTwist2d {
+    pub struct Twist2d("Twist2d", "double dx;double dy;double dtheta") for ProtobufTwist2d {
         /// The linear "dx" component.
         dx(dx): f64,
         /// The linear "dy" component.
@@ -901,7 +948,7 @@ data! {
 
 data! {
     /// Represents a change in distance along a 3D arc.
-    pub struct Twist3d("Twist3d") for ProtobufTwist3d {
+    pub struct Twist3d("Twist3d", "double dx;double dy;double dz;double rx;double ry;double rz") for ProtobufTwist3d {
         /// The linear "dx" component.
         dx(dx): f64,
         /// The linear "dy" component.
@@ -926,6 +973,10 @@ pub struct Vector<const N: usize> {
 
 #[cfg(feature = "struct")]
 impl<const N: usize> StructData for Vector<N> {
+    fn schema() -> String {
+        format!("double data[{N}]")
+    }
+
     fn struct_type_name() -> String {
         format!("Vector__{}", N)
     }
