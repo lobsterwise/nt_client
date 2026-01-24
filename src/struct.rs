@@ -1,7 +1,5 @@
 //! NetworkTables `struct` pack/unpack support.
 
-// TODO: .schema
-
 use std::mem::MaybeUninit;
 
 use byte::{ByteBuffer, ByteReader};
@@ -182,6 +180,10 @@ mod tests {
         }
 
         impl StructData for DropTest {
+            fn schema() -> String {
+                String::new()
+            }
+
             fn struct_type_name() -> String {
                 String::new()
             }
