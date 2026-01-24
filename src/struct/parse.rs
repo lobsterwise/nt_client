@@ -82,12 +82,15 @@ impl ParsedStruct {
     pub fn read_from_bytes(&self, read: &mut ByteReader) -> Option<Vec<(String, StructValue)>> {
         let mut fields = Vec::new();
 
+        let mut current_bitfield: Option<(u32, u32, u64)> = None;
         for declaration in &self.declarations {
             let field = match declaration {
                 StructDeclaration::Standard(StandardDeclaration { enum_spec, r#type, name, array_size: None }) => {
+                    current_bitfield = None;
                     (name.clone(), Self::read_single_standard(enum_spec, r#type, read)?)
                 },
                 StructDeclaration::Standard(StandardDeclaration { enum_spec, r#type, name, array_size: Some(array_size) }) => {
+                    current_bitfield = None;
                     let mut array = Vec::with_capacity(*array_size as usize);
                     for _ in 0..*array_size {
                         array.push(Self::read_single_standard(enum_spec, r#type, read)?);
@@ -95,7 +98,61 @@ impl ParsedStruct {
                     (name.clone(), StructValue::Array(array))
                 },
                 StructDeclaration::Bitfield(BitfieldDeclaration { enum_spec, r#type, name, bits }) => {
-                    todo!()
+                    let field_width = r#type.width().expect("bitfield has an integer type");
+                    let (width, remaining_bits, data) = match &mut current_bitfield {
+                        Some(bitfield) if field_width <= bitfield.0 && *bits <= bitfield.1 => {
+                            bitfield
+                        },
+                        _ => {
+                            let value = match r#type {
+                                TypeName::Bool | TypeName::I8 | TypeName::U8 => read.read_i8()? as u64,
+                                TypeName::I16 | TypeName::U16 => read.read_i16()? as u64,
+                                TypeName::I32 | TypeName::U32 => read.read_i32()? as u64,
+                                TypeName::I64 | TypeName::U64 => read.read_i64()? as u64,
+                                _ => panic!("expected bitfield to have an integer type"),
+                            };
+                            current_bitfield.insert((field_width, field_width, value))
+                        },
+                    };
+
+                    let mut value = 0u64;
+
+                    let offset = 8 * ((*width - *remaining_bits) / 8) + (*width - *remaining_bits) % 8;
+                    let mut mask = 1 << offset;
+
+                    for _ in 0..*bits {
+                        value |= mask & *data;
+                        *remaining_bits -= 1;
+                        mask <<= 1;
+                    }
+                    value >>= offset;
+                    let value = match r#type {
+                        TypeName::Bool => {
+                            if value == 1 {
+                                StructValue::Bool(true)
+                            } else if value == 0 {
+                                StructValue::Bool(false)
+                            } else {
+                                panic!("bitfield boolean is not 0 or 1");
+                            }
+                        },
+                        TypeName::I8 => StructValue::I8(value as i8),
+                        TypeName::I16 => StructValue::I16(value as i16),
+                        TypeName::I32 => StructValue::I32(value as i32),
+                        TypeName::I64 => StructValue::I64(value as i64),
+                        TypeName::U8 => StructValue::U8(value as u8),
+                        TypeName::U16 => StructValue::U16(value as u16),
+                        TypeName::U32 => StructValue::U32(value as u32),
+                        TypeName::U64 => StructValue::U64(value),
+                        _ => panic!("expected bitfield to have integer type"),
+                    };
+
+                    if let Some(enum_spec) = enum_spec {
+                        let enum_value = Self::find_enum_value(enum_spec, value)?;
+                        (name.clone(), StructValue::Enum(enum_value.0, enum_value.1))
+                    } else {
+                        (name.clone(), value)
+                    }
                 },
             };
 
@@ -106,27 +163,33 @@ impl ParsedStruct {
     }
 
     fn read_single_standard(enum_spec: &Option<EnumSpecification>, type_name: &TypeName, read: &mut ByteReader) -> Option<StructValue> {
-        let mut value = Self::read_type(type_name, read)?;
+        let value = Self::read_type(type_name, read)?;
         if let Some(enum_spec) = enum_spec {
-            for enum_value in &enum_spec.values {
-                let value_int = match value {
-                    StructValue::I8(i8) => i8 as i32,
-                    StructValue::I16(i16) => i16 as i32,
-                    StructValue::I32(i32) => i32,
-                    StructValue::I64(i64) => i64 as i32,
-                    StructValue::U8(u8) => u8 as i32,
-                    StructValue::U16(u16) => u16 as i32,
-                    StructValue::U32(u32) => u32 as i32,
-                    StructValue::U64(u64) => u64 as i32,
-                    _ => panic!("non-int enum type"),
-                };
-                if value_int == enum_value.value {
-                    value = StructValue::Enum((enum_value.name.clone(), value_int));
-                }
+            let enum_value = Self::find_enum_value(enum_spec, value)?;
+            Some(StructValue::Enum(enum_value.0, enum_value.1))
+        } else {
+            Some(value)
+        }
+    }
+
+    fn find_enum_value(enum_spec: &EnumSpecification, value: StructValue) -> Option<(String, i32)> {
+        for enum_value in &enum_spec.values {
+            let value_int = match value {
+                StructValue::I8(i8) => i8 as i32,
+                StructValue::I16(i16) => i16 as i32,
+                StructValue::I32(i32) => i32,
+                StructValue::I64(i64) => i64 as i32,
+                StructValue::U8(u8) => u8 as i32,
+                StructValue::U16(u16) => u16 as i32,
+                StructValue::U32(u32) => u32 as i32,
+                StructValue::U64(u64) => u64 as i32,
+                _ => panic!("non-int enum type"),
+            };
+            if value_int == enum_value.value {
+                return Some((enum_value.name.clone(), value_int));
             }
         }
-
-        Some(value)
+        None
     }
 
     fn read_type(type_name: &TypeName, read: &mut ByteReader) -> Option<StructValue> {
@@ -173,7 +236,7 @@ pub enum StructValue {
     F32(f32),
     F64(f64),
     Array(Vec<StructValue>),
-    Enum((String, i32)),
+    Enum(String, i32),
     Struct(HashMap<String, StructValue>),
 }
 
@@ -222,7 +285,11 @@ impl StructDeclaration {
                         return Err(ParseTokensError::Expected("positive bitfield width".to_owned()));
                     }
                     let bits = bits as u32;
-                    let max_width = type_name.width().ok_or(ParseTokensError::Expected("type to be a boolean or integer type".to_owned()))?;
+                    let max_width = if let TypeName::Bool = type_name {
+                        1
+                    } else {
+                        type_name.width().ok_or(ParseTokensError::Expected("type to be a boolean or integer type".to_owned()))?
+                    };
                     if bits <= max_width {
                         Ok(Self::Bitfield(BitfieldDeclaration { enum_spec, r#type: type_name, name: ident_name, bits }))
                     } else {
@@ -379,8 +446,7 @@ impl TypeName {
 
     pub fn width(&self) -> Option<u32> {
         match self {
-            TypeName::Bool => Some(8),
-            TypeName::Char => Some(u8::BITS),
+            TypeName::Bool => Some(i8::BITS),
             TypeName::I8 => Some(i8::BITS),
             TypeName::I16 => Some(i16::BITS),
             TypeName::I32 => Some(i32::BITS),
@@ -602,8 +668,32 @@ mod tests {
             ("b", StructValue::Bool(true)),
             ("i", StructValue::I16(15)),
         ]);
-
         assert_read("int16 i[2]", &[0x95, 0x03, 0xda, 0xff], vec![("i", StructValue::Array(vec![StructValue::I16(917), StructValue::I16(-38)]))]);
+        assert_read("{a=1, b=2} uint8 myenum", &[0x02], vec![("myenum", StructValue::Enum("b".to_owned(), 2))]);
+        assert_read("int8 a:4;int16 b:4", &[
+//            0000_aaaa    0000_bbbb    0000_0000
+            0b0000_0110, 0b0000_1101, 0b0000_0000,
+        ], vec![("a", StructValue::I8(6)), ("b", StructValue::I16(13))]);
+        assert_read("int16 a:4;uint16 b:5;bool c:1;int16 d:7", &[
+//            bbbb_aaaa    0000_00cb    0ddd_dddd    0000_0000
+            0b0111_1010, 0b0000_0010, 0b0011_0101, 0b0000_0000,
+        ], vec![("a", StructValue::I16(10)), ("b", StructValue::U16(7)), ("c", StructValue::Bool(true)), ("d", StructValue::I16(53))]);
+        assert_read("uint8 a:4;int8 b:2;bool c:1;int16 d:1", &[
+//            0cbb_aaaa    0000_000d    0000_0000
+            0b0001_0110, 0b0000_0001, 0b0000_0000,
+        ], vec![("a", StructValue::U8(6)), ("b", StructValue::I8(1)), ("c", StructValue::Bool(false)), ("d", StructValue::I16(1))]);
+        assert_read("bool a:1;bool b:1;int8 c:2", &[
+//            0000_ccba
+            0b0000_1001,
+        ], vec![("a", StructValue::Bool(true)), ("b", StructValue::Bool(false)), ("c", StructValue::I8(2))]);
+        assert_read("bool a:1;bool b:1;int16 c:2", &[
+//            0000_00ba    0000_00cc    0000_0000
+            0b0000_0101, 0b0000_0001, 0b0000_0000,
+        ], vec![("a", StructValue::Bool(true)), ("b", StructValue::Bool(false)), ("c", StructValue::I16(1))]);
+        assert_read("enum {a=1,b=2} int16 a:2;bool b:1", &[
+//            0000_0baa    0000_0000
+            0b0000_0101, 0b0000_0000,
+        ], vec![("a", StructValue::Enum("a".to_owned(), 1)), ("b", StructValue::Bool(true))]);
     }
 
     fn assert_read(schema: &str, bytes: &[u8], values: Vec<(&str, StructValue)>) {
