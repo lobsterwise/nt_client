@@ -62,7 +62,7 @@ use error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, Recei
 use futures_util::{stream::{SplitSink, SplitStream}, Future, SinkExt, StreamExt, TryStreamExt};
 use time::ext::InstantExt;
 use tokio::{net::TcpStream, select, sync::{broadcast, mpsc, Notify, RwLock}, task::JoinHandle, time::{interval, timeout}};
-use tokio_tungstenite::{tungstenite::{self, http::{Response, Uri}, ClientRequestBuilder, Message}, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, Bytes, ClientRequestBuilder, Message, http::{Response, Uri}}};
 use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic};
 use tracing::{debug, error, info, trace, warn};
 
@@ -392,15 +392,15 @@ impl Client {
                                     ServerboundTextData::Unsubscribe(Unsubscribe { subuid }) => debug!("[sub {subuid}] unsubscribed"),
                                     _ => {},
                                 };
-                                serde_json::to_string(&[json]).map_err(|err| err.into()).map(Message::Text)
+                                serde_json::to_string(&[json]).map_err(|err| err.into()).map(|string| Message::Text(string.into()))
                             },
                             ServerboundMessage::Binary(binary) => {
                                 if binary.id != -1 {
                                     debug!("[pub {}] set to {} at {:?}", binary.id, binary.data, binary.timestamp);
                                 };
-                                rmp_serde::to_vec(binary).map_err(|err| err.into()).map(Message::Binary)
+                                rmp_serde::to_vec(binary).map_err(|err| err.into()).map(|bytes| Message::Binary(bytes.into()))
                             },
-                            ServerboundMessage::Ping => Ok(Message::Ping(Vec::new())),
+                            ServerboundMessage::Ping => Ok(Message::Ping(Bytes::new())),
                         };
                         match packet {
                             Ok(packet) => {
@@ -428,10 +428,10 @@ impl Client {
             read.err_into().try_for_each(|message| async {
                 let message = match message {
                     Message::Binary(binary) => {
-                        let mut binary = VecDeque::from(binary);
+                        let mut binary = VecDeque::from(Vec::from(binary));
                         let mut binary_data = Vec::new();
                         while !binary.is_empty() {
-                            let Ok(binary) = rmp_serde::from_read::<&mut VecDeque<u8>, BinaryData>(&mut binary) else {
+                            let Ok(binary) = rmp_serde::from_read::<_, BinaryData>(&mut binary) else {
                                 warn!("malformed binary data");
                                 continue;
                             };
