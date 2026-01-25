@@ -79,7 +79,7 @@ impl ParsedStruct {
         Ok(ParsedStruct { declarations })
     }
 
-    pub fn read_from_bytes(&self, read: &mut ByteReader) -> Option<Vec<(String, StructValue)>> {
+    pub fn read_from_bytes(&self, read: &mut ByteReader, parsed: &HashMap<String, ParsedStruct>) -> Option<Vec<(String, StructValue)>> {
         let mut fields = Vec::new();
 
         let mut current_bitfield: Option<(u32, u32, u64)> = None;
@@ -87,13 +87,13 @@ impl ParsedStruct {
             let field = match declaration {
                 StructDeclaration::Standard(StandardDeclaration { enum_spec, r#type, name, array_size: None }) => {
                     current_bitfield = None;
-                    (name.clone(), Self::read_single_standard(enum_spec, r#type, read)?)
+                    (name.clone(), Self::read_single_standard(enum_spec, r#type, read, parsed)?)
                 },
                 StructDeclaration::Standard(StandardDeclaration { enum_spec, r#type, name, array_size: Some(array_size) }) => {
                     current_bitfield = None;
                     let mut array = Vec::with_capacity(*array_size as usize);
                     for _ in 0..*array_size {
-                        array.push(Self::read_single_standard(enum_spec, r#type, read)?);
+                        array.push(Self::read_single_standard(enum_spec, r#type, read, parsed)?);
                     }
                     (name.clone(), StructValue::Array(array))
                 },
@@ -162,8 +162,8 @@ impl ParsedStruct {
         Some(fields)
     }
 
-    fn read_single_standard(enum_spec: &Option<EnumSpecification>, type_name: &TypeName, read: &mut ByteReader) -> Option<StructValue> {
-        let value = Self::read_type(type_name, read)?;
+    fn read_single_standard(enum_spec: &Option<EnumSpecification>, type_name: &TypeName, read: &mut ByteReader, parsed: &HashMap<String, ParsedStruct>) -> Option<StructValue> {
+        let value = Self::read_type(type_name, read, parsed)?;
         if let Some(enum_spec) = enum_spec {
             let enum_value = Self::find_enum_value(enum_spec, value)?;
             Some(StructValue::Enum(enum_value.0, enum_value.1))
@@ -192,7 +192,7 @@ impl ParsedStruct {
         None
     }
 
-    fn read_type(type_name: &TypeName, read: &mut ByteReader) -> Option<StructValue> {
+    fn read_type(type_name: &TypeName, read: &mut ByteReader, parsed: &HashMap<String, ParsedStruct>) -> Option<StructValue> {
         match type_name {
             TypeName::Bool => {
                 let bool = read.read_i8()?;
@@ -216,7 +216,10 @@ impl ParsedStruct {
             TypeName::U64 => Some(StructValue::U64(read.read_i64()? as u64)),
             TypeName::F32 => Some(StructValue::F32(read.read_f32()?)),
             TypeName::F64 => Some(StructValue::F64(read.read_f64()?)),
-            TypeName::Struct(_) => todo!(),
+            TypeName::Struct(name) => {
+                let parsed_struct = parsed.get(name)?;
+                Some(StructValue::Nested(parsed_struct.read_from_bytes(read, parsed)?))
+            },
         }
     }
 }
@@ -237,7 +240,7 @@ pub enum StructValue {
     F64(f64),
     Array(Vec<StructValue>),
     Enum(String, i32),
-    Struct(HashMap<String, StructValue>),
+    Nested(Vec<(String, StructValue)>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -694,6 +697,25 @@ mod tests {
 //            0000_0baa    0000_0000
             0b0000_0101, 0b0000_0000,
         ], vec![("a", StructValue::Enum("a".to_owned(), 1)), ("b", StructValue::Bool(true))]);
+
+        let mut parsed = HashMap::new();
+        parsed.insert("Coords".to_owned(), parse_schema("double x;double y").unwrap());
+        parsed.insert("Flags".to_owned(), parse_schema("bool a:1;bool b:1;bool c:1").unwrap());
+
+        let bytes = [
+            0xf6, 0x07,
+            0x5c, 0x8f, 0xc2, 0xf5, 0x28, 0x1c, 0x4d, 0xc0,
+            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x10, 0x40,
+            0b0000_0101,
+        ];
+        assert_eq!(
+            parse_schema("uint16 id;Coords coords;Flags flags").unwrap().read_from_bytes(&mut ByteReader::new(&bytes), &parsed).unwrap(),
+            vec![
+                ("id".to_owned(), StructValue::U16(2038)),
+                ("coords".to_owned(), StructValue::Nested(vec![("x".to_owned(), StructValue::F64(-58.22)), ("y".to_owned(), StructValue::F64(4.1))])),
+                ("flags".to_owned(), StructValue::Nested(vec![("a".to_owned(), StructValue::Bool(true)), ("b".to_owned(), StructValue::Bool(false)), ("c".to_owned(), StructValue::Bool(true))])),
+            ],
+        );
     }
 
     fn assert_read(schema: &str, bytes: &[u8], values: Vec<(&str, StructValue)>) {
@@ -702,7 +724,7 @@ mod tests {
             .map(|(name, value)| (name.to_owned(), value))
             .collect();
 
-        assert_eq!(parsed.read_from_bytes(&mut ByteReader::new(bytes)), Some(values));
+        assert_eq!(parsed.read_from_bytes(&mut ByteReader::new(bytes), &Default::default()), Some(values));
     }
 }
 
