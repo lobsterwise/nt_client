@@ -509,7 +509,7 @@ pub enum LexTokenError {
     InvalidToken(char),
 }
 
-pub fn lex(input: &str) -> Result<Vec<Token>, LexTokenError> {
+pub fn lex(input: &str) -> Result<TokenStream, LexTokenError> {
     let mut tokens = Vec::new();
 
     let mut chars = input.chars().peekable();
@@ -539,7 +539,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>, LexTokenError> {
         chars.next();
     }
 
-    Ok(tokens)
+    Ok(TokenStream::new(tokens))
 }
 
 fn read_int(chars: &mut Peekable<Chars>) -> Result<i32, LexTokenError> {
@@ -580,15 +580,15 @@ mod tests {
 
     #[test]
     fn test_lexer() {
-        assert_eq!(lex("bool value"), Ok(vec![Token::Ident("bool".to_owned()), Token::Ident("value".to_owned())]));
-        assert_eq!(lex("double array[4]"), Ok(vec![
+        assert_eq!(lex("bool value"), Ok(TokenStream::new(vec![Token::Ident("bool".to_owned()), Token::Ident("value".to_owned())])));
+        assert_eq!(lex("double array[4]"), Ok(TokenStream::new(vec![
             Token::Ident("double".to_owned()),
             Token::Ident("array".to_owned()),
             Token::OpenBracket,
             Token::Number(4),
             Token::CloseBracket,
-        ]));
-        assert_eq!(lex("enum {a=1, b=2} int8 val"), Ok(vec![
+        ])));
+        assert_eq!(lex("enum {a=1, b=2} int8 val"), Ok(TokenStream::new(vec![
             Token::Ident("enum".to_owned()),
             Token::OpenBrace,
             Token::Ident("a".to_owned()),
@@ -601,7 +601,7 @@ mod tests {
             Token::CloseBrace,
             Token::Ident("int8".to_owned()),
             Token::Ident("val".to_owned()),
-        ]));
+        ])));
     }
 
     #[test]
