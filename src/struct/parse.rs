@@ -1,15 +1,19 @@
-#![allow(missing_docs)]
+//! `struct` schema parsing and reading.
+//!
+//! The schema spec is defined [here](https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc).
 
 use std::{collections::HashMap, iter::Peekable, str::Chars};
 
 use crate::r#struct::byte::ByteReader;
 
+/// A stream of tokens that can be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenStream {
     tokens: Vec<Token>,
 }
 
 impl TokenStream {
+    /// Creates a new `TokenStream` from a vec of [`Token`]s.
     pub fn new(mut tokens: Vec<Token>) -> Self {
         // reverse to pop from front
         tokens.reverse();
@@ -18,14 +22,24 @@ impl TokenStream {
         }
     }
 
+    /// Returns if the stream has tokens remaining.
     pub fn has_remaining(&mut self) -> bool {
         !self.tokens.is_empty()
     }
 
+    /// Returns the next token, advancing the stream by one.
+    ///
+    /// # Errors
+    /// Returns a [`ParseTokensError::Eof`] if there are no more tokens remaining.
     pub fn next_token(&mut self) -> Result<Token, ParseTokensError> {
         self.tokens.pop().ok_or(ParseTokensError::Eof)
     }
 
+    /// Returns the next token if it is an identifier, advancing the stream by one.
+    ///
+    /// # Errors
+    /// Returns an error if there are no more tokens remaining or if the next token is not an
+    /// identifier.
     pub fn next_ident(&mut self) -> Result<String, ParseTokensError> {
         match self.next_token()? {
             Token::Ident(ident) => Ok(ident),
@@ -33,6 +47,11 @@ impl TokenStream {
         }
     }
 
+    /// Returns the next token if it is a number, advancing the stream by one.
+    ///
+    /// # Errors
+    /// Returns an error if there are no more tokens remaining or if the next token is not a
+    /// number.
     pub fn next_number(&mut self) -> Result<i32, ParseTokensError> {
         match self.next_token()? {
             Token::Number(num) => Ok(num),
@@ -40,10 +59,19 @@ impl TokenStream {
         }
     }
 
+    /// Peeks the next token, not advancing the stream.
+    ///
+    /// # Errors
+    /// Returns a [`ParseTokensError::Eof`] if there are no more tokens remaining.
     pub fn peek(&mut self) -> Result<&Token, ParseTokensError> {
         self.tokens.last().ok_or(ParseTokensError::Eof)
     }
 
+    /// Peeks the next token if it is an identifier, not advancing the stream.
+    ///
+    /// # Errors
+    /// Returns an error if there are no more tokens remaining or if the next token is not an
+    /// identifier.
     pub fn peek_ident(&mut self) -> Result<&String, ParseTokensError> {
         match self.peek()? {
             Token::Ident(ident) => Ok(ident),
@@ -52,12 +80,24 @@ impl TokenStream {
     }
 }
 
+/// Represents a parsed struct from a schema string.
+///
+/// # Examples
+/// ```
+/// use nt_client::r#struct::parse::parse_schema;
+///
+/// let schema = "int16 myint;float myfloat;bool mybool";
+/// let parsed = parse_schema(schema).expect("valid schema");
+/// assert_eq!(parsed.declarations.len(), 3);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedStruct {
+    /// The declarations in the struct.
     pub declarations: Vec<StructDeclaration>,
 }
 
 impl ParsedStruct {
+    /// Parses a stream of tokens into a `ParsedStruct`, as described [here](https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc).
     pub fn parse_tokens(tokens: &mut TokenStream) -> Result<Self, ParseTokensError> {
         let mut declarations = Vec::new();
 
@@ -79,6 +119,10 @@ impl ParsedStruct {
         Ok(ParsedStruct { declarations })
     }
 
+    /// Reads this struct from byte data.
+    ///
+    /// The returned value contains a vector of both the field name and value.
+    /// It is guaranteed that this vector will contain every single field with its respective type.
     pub fn read_from_bytes(&self, read: &mut ByteReader, parsed: &HashMap<String, ParsedStruct>) -> Option<Vec<(String, StructValue)>> {
         let mut fields = Vec::new();
 
@@ -224,32 +268,55 @@ impl ParsedStruct {
     }
 }
 
+/// Represents a value a struct field could have.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StructValue {
+    /// A boolean.
     Bool(bool),
+    /// A UTF-8 character.
     Char(char),
+    /// A 1-byte signed value.
     I8(i8),
+    /// A 2-byte signed value.
     I16(i16),
+    /// A 4-byte signed value.
     I32(i32),
+    /// An 8-byte signed value.
     I64(i64),
+    /// A 1-byte unsigned value.
     U8(u8),
+    /// A 2-byte unsigned value.
     U16(u16),
+    /// A 4-byte unsigned value.
     U32(u32),
+    /// An 8-byte unsigned value.
     U64(u64),
+    /// A 4-byte IEEE-754 value.
     F32(f32),
+    /// An 8-byte IEEE-754 value.
     F64(f64),
+    /// An array of values.
+    ///
+    /// All elements should have the same type.
     Array(Vec<StructValue>),
+    /// An enum value, with its name and number representation.
     Enum(String, i32),
+    /// A nested struct value.
     Nested(Vec<(String, StructValue)>),
 }
 
+/// A parsed struct declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StructDeclaration {
+    /// A standard struct declaration.
     Standard(StandardDeclaration),
+    /// A bitfield struct declaration.
     Bitfield(BitfieldDeclaration),
 }
 
 impl StructDeclaration {
+    /// Parses a stream of tokens into a `StructDeclaration`, as described
+    /// [here](https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc#schema).
     pub fn parse_tokens(tokens: &mut TokenStream) -> Result<Self, ParseTokensError> {
         let enum_spec = match tokens.peek()? {
             Token::OpenBrace => Some(EnumSpecification::parse_tokens(tokens)?),
@@ -306,6 +373,7 @@ impl StructDeclaration {
         }
     }
 
+    /// Returns the enum specification of this declaration, if any.
     pub fn enum_spec(&self) -> Option<&EnumSpecification> {
         match self {
             Self::Standard(StandardDeclaration { enum_spec, .. }) => enum_spec.as_ref(),
@@ -313,6 +381,7 @@ impl StructDeclaration {
         }
     }
 
+    /// Returns the name of this declaration.
     pub fn name(&self) -> &String {
         match self {
             Self::Standard(StandardDeclaration { name, .. }) => name,
@@ -320,6 +389,7 @@ impl StructDeclaration {
         }
     }
 
+    /// Returns the type of this declaration.
     pub fn type_name(&self) -> &TypeName {
         match self {
             Self::Standard(StandardDeclaration { r#type, .. }) => r#type,
@@ -328,28 +398,41 @@ impl StructDeclaration {
     }
 }
 
+/// A standard struct declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StandardDeclaration {
+    /// The enum specification, if any.
     pub enum_spec: Option<EnumSpecification>,
+    /// The type.
     pub r#type: TypeName,
+    /// The name.
     pub name: String,
+    /// The array size, if any.
     pub array_size: Option<u32>,
 }
 
+/// A bitfield struct declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitfieldDeclaration {
+    /// The enum specification, if any.
     pub enum_spec: Option<EnumSpecification>,
+    /// The type.
     pub r#type: TypeName,
+    /// The name.
     pub name: String,
+    /// The bits this declaration will take up in packed data.
     pub bits: u32,
 }
 
+/// An enum specification for a struct declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumSpecification {
+    /// The enum values.
     pub values: Vec<EnumValue>,
 }
 
 impl EnumSpecification {
+    /// Parses a stream of tokens into an `EnumSpecification`, as described [here](https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc#enum-specification).
     pub fn parse_tokens(tokens: &mut TokenStream) -> Result<Self, ParseTokensError> {
         if let Ok(ident) = tokens.peek_ident() {
             if ident == "enum" {
@@ -389,13 +472,17 @@ impl EnumSpecification {
     }
 }
 
+/// A value for an enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumValue {
+    /// The name of the variant.
     pub name: String,
+    /// The value of the variant.
     pub value: i32,
 }
 
 impl EnumValue {
+    /// Parses a stream of tokens into an `EnumValue`.
     pub fn parse_tokens(tokens: &mut TokenStream) -> Result<Self, ParseTokensError> {
         let name = tokens.next_ident()?;
         match tokens.next_token()? {
@@ -407,24 +494,39 @@ impl EnumValue {
     }
 }
 
+/// The type a struct member can be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeName {
+    /// A boolean.
     Bool,
+    /// A UTF-8 character.
     Char,
+    /// A 1-byte signed value.
     I8,
+    /// A 2-byte signed value.
     I16,
+    /// A 4-byte signed value.
     I32,
+    /// An 8-byte signed value.
     I64,
+    /// A 1-byte unsigned value.
     U8,
+    /// A 2-byte unsigned value.
     U16,
+    /// A 4-byte unsigned value.
     U32,
+    /// An 8-byte unsigned value.
     U64,
+    /// A 4-byte IEEE-754 value.
     F32,
+    /// An 8-byte IEEE-754 value.
     F64,
+    /// A nested struct value.
     Struct(String),
 }
 
 impl TypeName {
+    /// Returns a type from a string.
     pub fn from_string(str: String) -> Self {
         match str.as_ref() {
             "bool" => Self::Bool,
@@ -443,10 +545,12 @@ impl TypeName {
         }
     }
 
+    /// Returns if this type is an integer type or not.
     pub fn is_int(&self) -> bool {
         !matches!(self, TypeName::Bool | TypeName::Char | TypeName::F32 | TypeName::F64 | TypeName::Struct(_))
     }
 
+    /// Returns the width of this type, if it is an integer type or a boolean.
     pub fn width(&self) -> Option<u32> {
         match self {
             TypeName::Bool => Some(i8::BITS),
@@ -463,52 +567,75 @@ impl TypeName {
     }
 }
 
+/// Errors that can occur when lexing a schema.
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ParseTokensError {
+    /// Expected something else.
     #[error("Expected {0}")]
     Expected(String),
 
+    /// Unexpected EOF.
     #[error("Unexpected EOF")]
     Eof,
 }
 
+/// Errors that can occur when parsing a [`ParsedStruct`].
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ParseSchemaError {
+    /// A lexing error.
     #[error(transparent)]
     Lex(#[from] LexTokenError),
 
+    /// A parsing error.
     #[error(transparent)]
     Parse(#[from] ParseTokensError),
 }
 
+/// Parses a schema string into a [`ParsedStruct`], as described
+/// [here](https://github.com/wpilibsuite/allwpilib/blob/main/wpiutil/doc/struct.adoc).
 pub fn parse_schema(schema: &str) -> Result<ParsedStruct, ParseSchemaError> {
-    let mut stream = TokenStream::new(lex(schema)?);
+    let mut stream = lex(schema)?;
     Ok(ParsedStruct::parse_tokens(&mut stream)?)
 }
 
+/// A token from a schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
+    /// A semicolon, `;`.
     Semi,
+    /// A comma, `,`.
     Comma,
+    /// A colon, `:`.
     Colon,
+    /// An equal sign, `=`.
     Eq,
+    /// An open brace, `{`.
     OpenBrace,
+    /// A close brace, `}`.
     CloseBrace,
+    /// An open bracket, `[`.
     OpenBracket,
+    /// A close bracket, `]`.
     CloseBracket,
+    /// An identifier.
     Ident(String),
+    /// A number.
     Number(i32),
 }
 
+/// Errors that can occur when lexing a schema.
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum LexTokenError {
+    /// An invalid digit.
     #[error("Invalid digit `{0}`")]
     InvalidDigit(char),
 
+    /// An invalid character.
     #[error("Invalid token `{0}`")]
     InvalidToken(char),
 }
 
+/// Lexes a schema input into a stream of tokens.
 pub fn lex(input: &str) -> Result<TokenStream, LexTokenError> {
     let mut tokens = Vec::new();
 
