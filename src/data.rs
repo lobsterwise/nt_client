@@ -7,14 +7,14 @@ use serde::{de::Visitor, ser::Error, Deserialize, Deserializer, Serialize, Seria
 
 pub mod r#type;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ServerboundMessage {
     Text(ServerboundTextData),
     Binary(BinaryData),
     Ping,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase", tag = "method", content = "params")]
 pub(crate) enum ServerboundTextData {
     Publish(Publish),
@@ -25,7 +25,7 @@ pub(crate) enum ServerboundTextData {
     Unsubscribe(Unsubscribe),
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Publish {
     pub name: String,
     pub pubuid: i32,
@@ -33,36 +33,36 @@ pub(crate) struct Publish {
     pub properties: Properties,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Unpublish {
     pub pubuid: i32,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SetProperties {
     pub name: String,
     pub update: HashMap<String, Option<serde_json::Value>>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Subscribe {
     pub topics: Vec<String>,
     pub subuid: i32,
     pub options: SubscriptionOptions,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Unsubscribe {
     pub subuid: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ClientboundData {
     Text(ClientboundTextData),
     Binary(BinaryData),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase", tag = "method", content = "params")]
 pub(crate) enum ClientboundTextData {
     Announce(Announce),
@@ -70,7 +70,7 @@ pub(crate) enum ClientboundTextData {
     Properties(PropertiesData),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Announce {
     pub name: String,
     pub id: i32,
@@ -79,22 +79,21 @@ pub(crate) struct Announce {
     pub properties: Properties,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Unannounce {
     pub name: String,
     pub id: i32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PropertiesData {
     pub name: String,
     // NOTE: this doesn't seem to ever exist
-    #[expect(dead_code)]
     pub ack: Option<bool>,
     pub update: HashMap<String, Option<serde_json::Value>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct BinaryData {
     pub id: i32,
     #[serde(serialize_with = "serialize_dur_as_micros", deserialize_with = "deserialize_micros_as_dur")]

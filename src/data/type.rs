@@ -283,22 +283,22 @@ pub trait NetworkTableData {
 
 transparent!(
     /// A JSON string.
-    #[derive(Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     JsonString: String
 );
 transparent!(
     /// Raw binary data.
-    #[derive(Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     RawData: vec u8
 );
 transparent!(
     /// Raw RPC data.
-    #[derive(Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     Rpc: vec u8
 );
 transparent!(
     /// Raw protobuf data.
-    #[derive(Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     Protobuf: vec u8
 );
 
