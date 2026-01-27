@@ -2,6 +2,8 @@
 
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::data::SubscriptionOptions;
+
 // holy macro
 macro_rules! impl_data_type {
     // T (and vec<T>) to data type with from<data type> -> T impl
@@ -116,6 +118,20 @@ macro_rules! transparent {
             }
         }
     };
+}
+
+macro_rules! read_from_str_map {
+    ($value: expr, $($str: literal = $pat: pat => $expr: expr),* $(,)?) => {{
+        let map = $value.as_map()?;
+        (
+        $(
+            {
+                let $pat = map.iter().find(|(key, _)| key.as_str().is_some_and(|key| key == "id"))?.1 else { return None; };
+                $expr
+            }
+        ),*
+        )
+    }};
 }
 
 /// A data type understood by a `NetworkTables` server.
@@ -318,6 +334,269 @@ impl_data_type!(JsonString => Json; value @ value.as_str().map(|str| JsonString(
 impl_data_type!(bytes RawData => Raw);
 impl_data_type!(bytes Rpc => Rpc);
 impl_data_type!(rmpv::Value => Msgpack; value @ Some(value.clone()));
+
+/// Clients connected to the `NetworkTables` server.
+///
+/// The server will publish these to the meta topic `$clients`.
+// TODO: example for all meta topic data
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectedClients {
+    /// The connected clients.
+    pub clients: Vec<ConnectedClient>,
+}
+
+impl NetworkTableData for ConnectedClients {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut clients = Vec::new();
+        for client in value.as_array()? {
+            let (id, conn) = read_from_str_map!(client,
+                "id" = rmpv::Value::String(ref str) => str.to_string(),
+                "conn" = rmpv::Value::String(ref str) => str.to_string(),
+            );
+
+            clients.push(ConnectedClient { id, conn });
+        }
+
+        Some(Self { clients })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let clients = self.clients.into_iter()
+            .map(|client| rmpv::Value::Map(vec![
+                ("id".into(), rmpv::Value::String(client.id.into())),
+                ("conn".into(), rmpv::Value::String(client.conn.into())),
+            ]))
+            .collect();
+        rmpv::Value::Array(clients)
+    }
+}
+
+/// A client connected to a `NetworkTables` server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectedClient {
+    /// The client's name.
+    pub id: String,
+    /// Connection information, typically `host:port`.
+    pub conn: String,
+}
+
+/// Active subscriptions by some client.
+///
+/// The server will publish these to the meta topic `$clientsub$<client>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientSubscriptions {
+    /// The subscriptions.
+    pub subscriptions: Vec<ClientSubscription>,
+}
+
+/// Active subscriptions made by the server.
+///
+/// The server will publish these to the meta topic `$serversub`.
+pub type ServerSubscriptions = ClientSubscriptions;
+
+impl NetworkTableData for ClientSubscriptions {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut subscriptions = Vec::new();
+        for subscription in value.as_array()? {
+            let (uid, topics, options) = read_from_str_map!(subscription,
+                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "topics" = rmpv::Value::Array(ref array) => {
+                    let mut vec = Vec::new();
+                    for value in array {
+                        vec.push(value.as_str()?.to_owned());
+                    }
+                    vec
+                },
+                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+            );
+            subscriptions.push(ClientSubscription { uid, topics, options });
+        }
+
+        Some(Self { subscriptions })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let subscriptions = self.subscriptions.into_iter()
+            .map(|subscription| rmpv::Value::Map(vec![
+                ("uid".into(), subscription.uid.into()),
+                ("topics".into(), subscription.topics.into_iter()
+                    .map(|name| rmpv::Value::String(name.into()))
+                    .collect()),
+                ("options".into(), subscription.options.into_msgpack_map().into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(subscriptions)
+    }
+}
+
+/// A subscription made by a client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientSubscription {
+    /// The subscription's unique identifier.
+    pub uid: i32,
+    /// The topic names/prefixes that the subscriber is subscribing to.
+    pub topics: Vec<String>,
+    /// The subscription options.
+    pub options: SubscriptionOptions,
+}
+
+/// Subscriptions made to a topic.
+///
+/// The server will publish these to the meta topic `$sub$<topic>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Subscriptions {
+    /// The subscriptions attached to the topic.
+    pub subscriptions: Vec<Subscription>,
+}
+
+impl NetworkTableData for Subscriptions {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut subscriptions = Vec::new();
+        for subscription in value.as_array()? {
+            let (client, subuid, options) = read_from_str_map!(subscription,
+                "client" = rmpv::Value::String(ref str) => str.to_string(),
+                "subuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+            );
+            subscriptions.push(Subscription { client, subuid, options });
+        }
+
+        Some(Self { subscriptions })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let subscriptions = self.subscriptions.into_iter()
+            .map(|subscription| rmpv::Value::Map(vec![
+                ("client".into(), subscription.client.into()),
+                ("subuid".into(), subscription.subuid.into()),
+                ("options".into(), subscription.options.into_msgpack_map().into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(subscriptions)
+    }
+}
+
+/// A subscription to a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Subscription {
+    /// The client's name, or an empty string for server subscriptions.
+    pub client: String,
+    /// The subscription's unique identifier.
+    pub subuid: i32,
+    /// The subscription options.
+    pub options: SubscriptionOptions,
+}
+
+/// Active publishers made by some client.
+///
+/// The server will publish these to the meta topic `$clientpub$<client>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPublishers {
+    /// The publishers.
+    pub publishers: Vec<ClientPublisher>,
+}
+
+/// Active publishers made by the server.
+///
+/// The server will publish these to the meta topic `$serverpub`.
+pub type ServerPublishers = ClientPublishers;
+
+impl NetworkTableData for ClientPublishers {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut publishers = Vec::new();
+        for publisher in value.as_array()? {
+            let (uid, topic) = read_from_str_map!(publisher,
+                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "topic" = rmpv::Value::String(ref string) => string.to_string(),
+            );
+            publishers.push(ClientPublisher { uid, topic });
+        }
+
+        Some(Self { publishers })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let publishers = self.publishers.into_iter()
+            .map(|publisher| rmpv::Value::Map(vec![
+                ("uid".into(), publisher.uid.into()),
+                ("topic".into(), publisher.topic.into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(publishers)
+    }
+}
+
+/// A publisher made by some client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPublisher {
+    /// This publisher's unique identifier.
+    pub uid: i32,
+    /// The topic the publisher is publishing to.
+    pub topic: String,
+}
+
+/// Publishers made to a topic.
+///
+/// The server will publish these to the meta topic `$pub$<topic>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publishers {
+    /// The publishers attached to the topic.
+    pub publishers: Vec<Publisher>,
+}
+
+impl NetworkTableData for Publishers {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut publishers = Vec::new();
+        for publisher in value.as_array()? {
+            let (client, pubuid) = read_from_str_map!(publisher,
+                "client" = rmpv::Value::String(ref string) => string.to_string(),
+                "pubuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+            );
+            publishers.push(Publisher { client, pubuid });
+        }
+
+        Some(Self { publishers })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let publishers = self.publishers.into_iter()
+            .map(|publisher| rmpv::Value::Map(vec![
+                ("client".into(), publisher.client.into()),
+                ("pubuid".into(), publisher.pubuid.into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(publishers)
+    }
+}
+
+/// A publisher to a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publisher {
+    /// The client's name, or an empty string for server publishers.
+    pub client: String,
+    /// The publisher's unique identifier.
+    pub pubuid: i32,
+}
 
 pub(super) fn serialize_as_u32<S>(data_type: &DataType, serializer: S) -> Result<S::Ok, S::Error>
 where S: Serializer
