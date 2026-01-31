@@ -4,7 +4,7 @@
 use crate::protobuf::{ProtobufData, controller::*, geometry2d::*, geometry3d::*, kinematics::*, plant::*, spline::*, system::*, trajectory::*, wpimath::*};
 
 #[cfg(feature = "struct")]
-use crate::r#struct::{StructData, byte::{ByteBuffer, ByteReader}};
+use crate::r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}};
 
 macro_rules! data {
     ($(#[$m: meta])* $vis: vis struct $ident: ident ( $n: literal , $s: literal ) for $proto: ident { $($(#[$fm: meta])* $f: ident ( $p: ident ) : $ty: tt ),+ $(,)? }) => {
@@ -19,8 +19,8 @@ macro_rules! data {
 
         #[cfg(feature = "struct")]
         impl $crate::r#struct::StructData for $ident {
-            fn schema() -> String {
-                $s.to_owned()
+            fn schema() -> $crate::r#struct::StructSchema {
+                $crate::r#struct::StructSchema($s.to_owned())
             }
 
             fn struct_type_name() -> String {
@@ -189,8 +189,8 @@ pub struct CubicHermiteSpline {
 
 #[cfg(feature = "struct")]
 impl StructData for CubicHermiteSpline {
-    fn schema() -> String {
-        "double xInitial[2];double xFinal[2];double yInitial[2];double yFinal[2]".to_owned()
+    fn schema() -> StructSchema {
+        StructSchema("double xInitial[2];double xFinal[2];double yInitial[2];double yFinal[2]".to_owned())
     }
 
     fn struct_type_name() -> String {
@@ -360,8 +360,8 @@ pub struct ExponentialProfileState {
 
 #[cfg(feature = "struct")]
 impl StructData for ExponentialProfileState {
-    fn schema() -> String {
-        "double position;double velocity".to_owned()
+    fn schema() -> StructSchema {
+        StructSchema("double position;double velocity".to_owned())
     }
 
     fn struct_type_name() -> String {
@@ -398,14 +398,14 @@ pub struct LinearSystem<const S: usize, const I: usize, const O: usize> {
 
 #[cfg(feature = "struct")]
 impl<const S: usize, const I: usize, const O: usize> StructData for LinearSystem<S, I, O,> {
-    fn schema() -> String {
-        format!(
+    fn schema() -> StructSchema {
+        StructSchema(format!(
             "{} a;{} b;{} c;{} d",
             <Matrix<S, S>>::struct_type_name(),
             <Matrix<S, I>>::struct_type_name(),
             <Matrix<O, S>>::struct_type_name(),
             <Matrix<O, I>>::struct_type_name(),
-        )
+        ))
     }
 
     fn struct_type_name() -> String {
@@ -465,8 +465,8 @@ pub struct Matrix<const R: usize, const C: usize> {
 
 #[cfg(feature = "struct")]
 impl<const R: usize, const C: usize> StructData for Matrix<R, C> {
-    fn schema() -> String {
-        format!("double data[{}]", R * C)
+    fn schema() -> StructSchema {
+        StructSchema(format!("double data[{}]", R * C))
     }
 
     fn struct_type_name() -> String {
@@ -612,8 +612,8 @@ pub struct QuinticHermiteSpline {
 
 #[cfg(feature = "struct")]
 impl StructData for QuinticHermiteSpline {
-    fn schema() -> String {
-        "double xInitial[3];double xFinal[3];double yInitial[3];double yFinal[3]".to_owned()
+    fn schema() -> StructSchema {
+        StructSchema("double xInitial[3];double xFinal[3];double yInitial[3];double yFinal[3]".to_owned())
     }
 
     fn struct_type_name() -> String {
@@ -728,8 +728,8 @@ pub struct SwerveDriveKinematics<const N: usize> {
 
 #[cfg(feature = "struct")]
 impl<const N: usize> StructData for SwerveDriveKinematics<N> {
-    fn schema() -> String {
-        format!("Translation2d modules[{N}]")
+    fn schema() -> StructSchema {
+        StructSchema(format!("Translation2d modules[{N}]"))
     }
 
     fn struct_type_name() -> String {
@@ -913,8 +913,8 @@ pub struct TrapezoidProfileState {
 
 #[cfg(feature = "struct")]
 impl StructData for TrapezoidProfileState {
-    fn schema() -> String {
-        "double position;double velocity".to_owned()
+    fn schema() -> StructSchema {
+        StructSchema("double position;double velocity".to_owned())
     }
 
     fn struct_type_name() -> String {
@@ -973,8 +973,8 @@ pub struct Vector<const N: usize> {
 
 #[cfg(feature = "struct")]
 impl<const N: usize> StructData for Vector<N> {
-    fn schema() -> String {
-        format!("double data[{N}]")
+    fn schema() -> StructSchema {
+        StructSchema(format!("double data[{N}]"))
     }
 
     fn struct_type_name() -> String {

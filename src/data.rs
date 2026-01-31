@@ -197,6 +197,12 @@ pub enum DataType {
     #[serde(rename = "string[]")]
     StringArray,
 
+    /// A struct schema.
+    ///
+    /// This is internally stored as `raw` data.
+    #[cfg(feature = "struct")]
+    StructSchema,
+
     /// Vec of custom binary `struct` data types.
     #[cfg(feature = "struct")]
     #[serde(untagged, serialize_with = "serialize_struct_array", deserialize_with = "deserialize_struct_array")]
@@ -292,7 +298,7 @@ impl DataType {
             D::Unknown(_) => panic!("unknown data type"),
 
             #[cfg(feature = "struct")]
-            D::Struct(_) | D::StructArray(_) => 5,
+            D::Struct(_) | D::StructArray(_) | D::StructSchema => 5,
 
             #[cfg(feature = "protobuf")]
             D::Protobuf(_) => 5,

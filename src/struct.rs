@@ -45,7 +45,7 @@ pub trait StructData {
     fn struct_type_name() -> String;
 
     /// Returns the struct schema.
-    fn schema() -> String;
+    fn schema() -> StructSchema;
 
     /// Puts object contents to `buf`.
     fn pack(self, buf: &mut ByteBuffer);
@@ -118,6 +118,31 @@ impl <T: StructData, const S: usize> NetworkTableData for [Struct<T>; S] {
     }
 }
 
+/// A struct schema.
+///
+/// Note that the schema is not checked for validity, make sure it is a valid schema before
+/// publishing to the server.
+///
+/// You can make sure the schema is valid by calling [`parse::parse_schema`] and checking for an error.
+pub struct StructSchema(pub String);
+
+impl NetworkTableData for StructSchema {
+    fn data_type() -> DataType {
+        DataType::StructSchema
+    }
+
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        match value {
+            rmpv::Value::Binary(value) => String::from_utf8(value).ok().map(Self),
+            _ => None,
+        }
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        rmpv::Value::Binary(self.0.into_bytes())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "math")]
@@ -138,8 +163,8 @@ mod tests {
         }
 
         impl StructData for MyStruct {
-            fn schema() -> String {
-                String::new()
+            fn schema() -> StructSchema {
+                StructSchema(String::new())
             }
 
             fn struct_type_name() -> String {
@@ -180,8 +205,8 @@ mod tests {
         }
 
         impl StructData for DropTest {
-            fn schema() -> String {
-                String::new()
+            fn schema() -> StructSchema {
+                StructSchema(String::new())
             }
 
             fn struct_type_name() -> String {
