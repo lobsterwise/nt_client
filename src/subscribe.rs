@@ -24,7 +24,7 @@
 //!             match subscriber.recv().await {
 //!                 Ok(ReceivedMessage::Updated((_topic, value))) => {
 //!                     // get the updated value as an `i32`
-//!                     let number = i32::from_value(&value).unwrap();
+//!                     let number = i32::from_value(value).unwrap();
 //!                     println!("counter updated to {number}");
 //!                 },
 //!                 Ok(ReceivedMessage::Announced(topic)) => println!("announced topic: {topic:?}"),
