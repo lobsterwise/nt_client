@@ -1,6 +1,6 @@
 //! An example serializing and deserializing binary "structs" using the `struct` and `math` feature flag.
 
-use nt_client::{Client, data::{Properties, r#type::{DataType, NetworkTableData}}, math::ArmFeedforward, r#struct::{Struct, StructData}, subscribe::ReceivedMessage};
+use nt_client::{Client, data::{DataType, NetworkTableData}, math::ArmFeedforward, r#struct::{Struct, StructData}, subscribe::ReceivedMessage, topic::Properties};
 
 #[tokio::main]
 async fn main() {

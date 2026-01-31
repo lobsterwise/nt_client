@@ -5,7 +5,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use nt_client::{subscribe::ReceivedMessage, data::r#type::NetworkTableData, Client};
+//! use nt_client::{subscribe::ReceivedMessage, data::NetworkTableData, Client};
 //!
 //! # tokio_test::block_on(async {
 //! let client = Client::new(Default::default());
@@ -39,13 +39,14 @@
 //!     });
 //! }
 
-use std::{collections::{HashMap, HashSet}, fmt::Debug, sync::Arc};
+use std::{collections::{HashMap, HashSet}, fmt::Debug, sync::Arc, time::Duration};
 
 use futures_util::future::join_all;
+use serde::{Serialize, Serializer};
 use tokio::sync::{broadcast, RwLock};
 use tracing::warn;
 
-use crate::{data::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, SubscriptionOptions, Unsubscribe}, error::ConnectionClosedError, recv_until_async, topic::{AnnouncedTopic, AnnouncedTopics}, NTClientReceiver, NTServerSender};
+use crate::{NTClientReceiver, NTServerSender, error::ConnectionClosedError, net::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unsubscribe}, recv_until_async, topic::{AnnouncedTopic, AnnouncedTopics}};
 
 /// A `NetworkTables` subscriber that subscribes to a [`Topic`].
 ///
@@ -211,6 +212,115 @@ impl Drop for Subscriber {
         let unsub_message = ServerboundTextData::Unsubscribe(Unsubscribe { subuid: self.id });
         // if the receiver is dropped, the ws connection is closed
         let _ = self.ws_sender.send(ServerboundMessage::Text(unsub_message).into());
+    }
+}
+
+/// Options to use when subscribing to a topic.
+///
+/// To add extra properties, use the `extra` field.
+#[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub struct SubscriptionOptions {
+    /// Periodic sweep time in seconds.
+    ///
+    /// This is how frequently the server should send changes. This value isn't guaranteed by the
+    /// server nor the client.
+    ///
+    /// Default is `100 ms`.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_dur_as_secs")]
+    pub periodic: Option<Duration>,
+    /// All changes flag.
+    ///
+    /// If `true`, all value changes are sent when subscribing rather than just the most recent
+    /// value.
+    ///
+    /// Default is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all: Option<bool>,
+    /// No value changes flag.
+    ///
+    /// If `true`, the client will only receive topic announce messages and not value changes.
+    ///
+    /// Default is `false`.
+    #[serde(rename = "topicsonly", skip_serializing_if = "Option::is_none")]
+    pub topics_only: Option<bool>,
+    /// Prefix flag.
+    ///
+    /// If `true`, all topics starting with the name of the topic(s) will be subscribed to.
+    ///
+    /// Default is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<bool>,
+
+    /// Extra data.
+    ///
+    /// This should be used for generic options not officially recognized by a `NetworkTables` server.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl SubscriptionOptions {
+    /// Converts from a `msgpack` map.
+    pub fn from_msgpack_map(map: &Vec<(rmpv::Value, rmpv::Value)>) -> Option<Self> {
+        let mut periodic = None;
+        let mut all = None;
+        let mut topics_only = None;
+        let mut prefix = None;
+        let extra = HashMap::new();
+
+        for (key, value) in map {
+            let key = if let rmpv::Value::String(key) = key {
+                key.as_str()?
+            } else {
+                return None;
+            };
+
+            match key {
+                "periodic" => periodic = value.as_u64().map(Duration::from_secs),
+                "all" => all = value.as_bool(),
+                "topicsonly" => topics_only = value.as_bool(),
+                "prefix" => prefix = value.as_bool(),
+                // TODO: rmpv value to json value
+                _ => todo!(),
+            }
+        }
+
+        Some(Self {
+            periodic,
+            all,
+            topics_only,
+            prefix,
+            extra,
+        })
+    }
+
+    /// Converts these options into a `msgpack` map.
+    pub fn into_msgpack_map(self) -> Vec<(rmpv::Value, rmpv::Value)> {
+        let mut map = Vec::new();
+        if let Some(periodic) = self.periodic {
+            map.push((rmpv::Value::String("periodic".into()), rmpv::Value::Integer(periodic.as_secs().into())));
+        };
+        if let Some(all) = self.all {
+            map.push((rmpv::Value::String("all".into()), rmpv::Value::Boolean(all)));
+        };
+        if let Some(topics_only) = self.topics_only {
+            map.push((rmpv::Value::String("topicsonly".into()), rmpv::Value::Boolean(topics_only)));
+        };
+        if let Some(prefix) = self.prefix {
+            map.push((rmpv::Value::String("prefix".into()), rmpv::Value::Boolean(prefix)));
+        };
+        // TODO: json value to rmpv value
+        map
+    }
+}
+
+fn serialize_dur_as_secs<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer
+{
+    if let Some(duration) = duration {
+        serializer.serialize_f64(duration.as_secs_f64())
+    } else {
+        serializer.serialize_none()
     }
 }
 

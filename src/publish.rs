@@ -38,7 +38,7 @@
 //! **Using a [`GenericPublisher`]:**
 //! ```no_run
 //! use std::time::Duration;
-//! use nt_client::{data::r#type::DataType, Client};
+//! use nt_client::{data::DataType, Client};
 //!
 //! # tokio_test::block_on(async {
 //! let client = Client::new(Default::default());
@@ -70,7 +70,7 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::Arc, time
 
 use tokio::sync::{broadcast, RwLock};
 
-use crate::{data::{r#type::{DataType, NetworkTableData}, Announce, BinaryData, ClientboundData, ClientboundTextData, Properties, PropertiesData, Publish, ServerboundMessage, ServerboundTextData, SetProperties, Unpublish}, error::ConnectionClosedError, recv_until, NTClientReceiver, NTServerSender, NetworkTablesTime};
+use crate::{NTClientReceiver, NTServerSender, NetworkTablesTime, data::{DataType, NetworkTableData}, error::ConnectionClosedError, net::{Announce, BinaryData, ClientboundData, ClientboundTextData, PropertiesData, Publish, ServerboundMessage, ServerboundTextData, SetProperties, Unpublish}, recv_until, topic::Properties};
 
 /// A `NetworkTables` publisher that publishes values to a [`Topic`].
 ///
@@ -359,7 +359,7 @@ impl GenericPublisher {
     /// # Examples
     /// ```no_run
     /// use std::time::Duration;
-    /// use nt_client::{publish::UpdateProps, data::r#type::DataType, Client};
+    /// use nt_client::{publish::UpdateProps, data::DataType, Client};
     ///
     /// # tokio_test::block_on(async {
     /// let client = Client::new(Default::default());
@@ -544,7 +544,7 @@ impl UpdateProps {
     ///
     /// # Examples
     /// ```
-    /// use nt_client::{data::Properties, publish::UpdateProps};
+    /// use nt_client::{publish::UpdateProps, topic::Properties};
     ///
     /// // properties are:
     /// // - persistent: `true`
@@ -585,7 +585,7 @@ impl UpdateProps {
     ///
     /// # Examples
     /// ```
-    /// use nt_client::{data::Properties, publish::UpdateProps};
+    /// use nt_client::{publish::UpdateProps, topic::Properties};
     ///
     /// // properties are:
     /// // - persistent: `true`

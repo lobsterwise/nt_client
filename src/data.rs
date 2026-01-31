@@ -1,290 +1,705 @@
-//! Data sent between a `NetworkTables` connection.
+//! `NetworkTables` data values and types.
 
-use std::{collections::HashMap, time::Duration};
+#[cfg(any(feature = "protobuf", feature = "struct"))]
+use serde::{de::Visitor, Deserializer, Serializer};
 
-use r#type::{DataType, NetworkTableData};
-use serde::{de::Visitor, ser::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-pub mod r#type;
+use crate::subscribe::SubscriptionOptions;
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ServerboundMessage {
-    Text(ServerboundTextData),
-    Binary(BinaryData),
-    Ping,
+// holy macro
+macro_rules! impl_data_type {
+    // T (and vec<T>) to data type with from<data type> -> T impl
+    ($t: ty $([vec => $a: expr])? => $d: expr ; $v: ident @ $f: expr) => {
+        impl_data_type!(@ $t, $d, [$v]{ $f });
+        $( impl_data_type!(vec $t => $a; $v @ { $f }); )?
+    };
+
+    // T (and vec<T>) to data type with from<data type> -> T impl (block)
+    ($t: ty $([vec => $a: expr])? => $d: expr ; $v: ident @ $f: block) => {
+        impl_data_type!(@ $t, $d, [$v]$f);
+        $( impl_data_type!(vec $t => $a; $v @ { $f }); )?
+    };
+
+    // int (and vec<int>) to data type
+    ($t: ty $([vec => $a: expr])? => $d: expr ; i) => {
+        impl_data_type!(@ $t, $d, [value] value.as_i64());
+        $( impl_data_type!(vec $t => $a; value @ { value.as_i64().and_then(|value| value.try_into().ok()) }); )?
+    };
+    // uint (and vec<uint>) to data type
+    ($t: ty $([vec => $a: expr])? => $d: expr ; u) => {
+        impl_data_type!(@ $t, $d, [value] value.as_u64());
+        $( impl_data_type!(vec $t => $a; value @ { value.as_u64().and_then(|value| value.try_into().ok()) }); )?
+    };
+
+    // some_wrapper(vec<T>) to data type with mapper from value to T
+    (vec($i: ty) $t: ty => $d: expr ; $v: ident @ $c: block) => {
+        impl_data_type!(@ $t, $d, [value]{
+            let vec = value.as_array()?;
+            vec.iter()
+                .map(|$v| $c)
+                .collect::<Option<$t>>()
+        }, [this]{
+            let vec: Vec<$i> = this.into();
+            rmpv::Value::from_iter(vec)
+        });
+    };
+    // vec<T> to data type with mapper from value to T
+    (vec $i: ty => $d: expr ; $v: ident @ $c: block) => {
+        impl_data_type!(@ Vec<$i>, $d, [value]{
+            let vec = value.as_array()?;
+            vec.iter()
+                .map(|$v| $c)
+                .collect::<Option<Vec<$i>>>()
+        }, [this]{ rmpv::Value::from_iter(this) });
+    };
+    // some_wrapper(vec<u8>) to data type
+    (bytes $t: ty => $d: expr) => {
+        impl_data_type!(vec(u8) $t => $d ; value @ {
+            value.as_u64().and_then(|value| value.try_into().ok())
+        });
+    };
+
+    // INTERNAL generic impl with some from logic without custom into logic
+    (@ $t: ty, $d: expr, [ $v: ident ] $a: expr) => {
+        impl_data_type!(@ $t, $d, [$v]{ $a.and_then(|value| value.try_into().ok()) }, [this]{ this.into() });
+    };
+    // INTERNAL generic impl with custom from and into logic
+    (@ $t: ty, $d: expr, [ $v: ident ] $f: block, [ $s: ident ] $i: block) => {
+        impl NetworkTableData for $t {
+            fn data_type() -> DataType {
+                use DataType::*;
+                $d
+            }
+            #[allow(unused_variables)]
+            fn from_value($v: &rmpv::Value) -> Option<Self> {
+                $f
+            }
+            fn into_value(self) -> rmpv::Value {
+                let $s = self;
+                $i
+            }
+        }
+    };
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase", tag = "method", content = "params")]
-pub(crate) enum ServerboundTextData {
-    Publish(Publish),
-    Unpublish(Unpublish),
-    SetProperties(SetProperties),
+macro_rules! transparent {
+    ($(#[$m: meta])* $t: ident : $g: ty) => {
+        transparent!(@ $t, $($m)*, $g);
+    };
+    ($(#[$m: meta])* $t: ident : vec $g: ty) => {
+        transparent!(@ $t, $($m)*, Vec<$g>);
+        transparent!(@vec $t, $g);
+    };
 
-    Subscribe(Subscribe),
-    Unsubscribe(Unsubscribe),
-}
+    (@ $t: ident, $($m: meta)*, $g: ty) => {
+        $(#[$m])*
+        pub struct $t(pub $g);
 
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Publish {
-    pub name: String,
-    pub pubuid: i32,
-    pub r#type: DataType,
-    pub properties: Properties,
-}
-
-#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Unpublish {
-    pub pubuid: i32,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SetProperties {
-    pub name: String,
-    pub update: HashMap<String, Option<serde_json::Value>>,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Subscribe {
-    pub topics: Vec<String>,
-    pub subuid: i32,
-    pub options: SubscriptionOptions,
-}
-
-#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Unsubscribe {
-    pub subuid: i32,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ClientboundData {
-    Text(ClientboundTextData),
-    Binary(BinaryData),
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase", tag = "method", content = "params")]
-pub(crate) enum ClientboundTextData {
-    Announce(Announce),
-    Unannounce(Unannounce),
-    Properties(PropertiesData),
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Announce {
-    pub name: String,
-    pub id: i32,
-    pub r#type: DataType,
-    pub pubuid: Option<i32>,
-    pub properties: Properties,
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Unannounce {
-    pub name: String,
-    pub id: i32,
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PropertiesData {
-    pub name: String,
-    // NOTE: this doesn't seem to ever exist
-    pub ack: Option<bool>,
-    pub update: HashMap<String, Option<serde_json::Value>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub(crate) struct BinaryData {
-    pub id: i32,
-    #[serde(serialize_with = "serialize_dur_as_micros", deserialize_with = "deserialize_micros_as_dur")]
-    pub timestamp: Duration,
-    #[serde(serialize_with = "r#type::serialize_as_u32", deserialize_with = "r#type::deserialize_u32")]
-    pub data_type: DataType,
-    pub data: rmpv::Value,
-}
-
-impl BinaryData {
-    pub fn new<T: NetworkTableData>(id: i32, timestamp: Duration, data: T) -> Self {
-        Self { id, timestamp, data_type: T::data_type(), data: data.into_value() }
-    }
-}
-
-/// Topic properties.
-///
-/// These are properties attached to all topics and are represented as JSON. To add extra
-/// properties, use the `extra` field.
-///
-/// Docs taken and summarized from [here](https://github.com/wpilibsuite/allwpilib/blob/main/ntcore/doc/networktables4.adoc#properties).
-// TODO: test if server recognizes non-bool properties
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub struct Properties {
-    /// Persistent flag.
-    ///
-    /// If set to `true`, the server will save this value and it will be restored during server
-    /// startup. It will also not be deleted by the server if the last publisher stops publishing.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub persistent: Option<bool>,
-    /// Retained flag.
-    ///
-    /// If set to `true`, the server will not delete this topic when the last publisher stops
-    /// publishing.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retained: Option<bool>,
-    /// Cached flag.
-    ///
-    /// If set to `false`, servers and clients will not store the value of this topic meaning only
-    /// values updates will be avaible for the topic.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached: Option<bool>,
-
-    /// Extra property values.
-    ///
-    /// This should be used for generic properties not officially recognized by a `NetworkTables` server.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
-
-/// Options to use when subscribing to a topic.
-///
-/// To add extra properties, use the `extra` field.
-#[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub struct SubscriptionOptions {
-    /// Periodic sweep time in seconds.
-    ///
-    /// This is how frequently the server should send changes. This value isn't guaranteed by the
-    /// server nor the client.
-    ///
-    /// Default is `100 ms`.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_dur_as_secs")]
-    pub periodic: Option<Duration>,
-    /// All changes flag.
-    ///
-    /// If `true`, all value changes are sent when subscribing rather than just the most recent
-    /// value.
-    ///
-    /// Default is `false`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub all: Option<bool>,
-    /// No value changes flag.
-    ///
-    /// If `true`, the client will only receive topic announce messages and not value changes.
-    ///
-    /// Default is `false`.
-    #[serde(rename = "topicsonly", skip_serializing_if = "Option::is_none")]
-    pub topics_only: Option<bool>,
-    /// Prefix flag.
-    ///
-    /// If `true`, all topics starting with the name of the topic(s) will be subscribed to.
-    ///
-    /// Default is `false`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<bool>,
-
-    /// Extra data.
-    ///
-    /// This should be used for generic options not officially recognized by a `NetworkTables` server.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
-
-impl SubscriptionOptions {
-    /// Converts from a `msgpack` map.
-    pub fn from_msgpack_map(map: &Vec<(rmpv::Value, rmpv::Value)>) -> Option<Self> {
-        let mut periodic = None;
-        let mut all = None;
-        let mut topics_only = None;
-        let mut prefix = None;
-        let extra = HashMap::new();
-
-        for (key, value) in map {
-            let key = if let rmpv::Value::String(key) = key {
-                key.as_str()?
-            } else {
-                return None;
-            };
-
-            match key {
-                "periodic" => periodic = value.as_u64().map(Duration::from_secs),
-                "all" => all = value.as_bool(),
-                "topicsonly" => topics_only = value.as_bool(),
-                "prefix" => prefix = value.as_bool(),
-                // TODO: rmpv value to json value
-                _ => todo!(),
+        impl From<$t> for $g {
+            fn from(value: $t) -> Self {
+                value.0
+            }
+        }
+        impl From<$g> for $t {
+            fn from(value: $g) -> Self {
+                Self(value)
             }
         }
 
-        Some(Self {
-            periodic,
-            all,
-            topics_only,
-            prefix,
-            extra,
-        })
+        #[allow(clippy::from_over_into)]
+        impl Into<rmpv::Value> for $t {
+            fn into(self) -> rmpv::Value {
+                self.0.into()
+            }
+        }
+    };
+    (@vec $t: ident, $i: ty) => {
+        impl FromIterator<$i> for $t {
+            fn from_iter<I: IntoIterator<Item = $i>>(iter: I) -> Self {
+                iter.into_iter().collect::<Vec<$i>>().into()
+            }
+        }
+    };
+}
+
+macro_rules! read_from_str_map {
+    ($value: expr, $($str: literal = $pat: pat => $expr: expr),* $(,)?) => {{
+        let map = $value.as_map()?;
+        (
+        $(
+            {
+                let $pat = map.iter().find(|(key, _)| key.as_str().is_some_and(|key| key == "id"))?.1 else { return None; };
+                $expr
+            }
+        ),*
+        )
+    }};
+}
+
+/// A data type understood by a `NetworkTables` server.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DataType {
+    /// [`bool`] data type.
+    Boolean,
+    /// [`f64`] data type.
+    Double,
+    /// Any integer data type.
+    ///
+    /// This includes Rust types like [`u8`], [`i32`], and [`u16`].
+    Int,
+    /// [`f32`] data type.
+    Float,
+    /// [`String`] data type.
+    String,
+    /// JSON data type.
+    ///
+    /// Internally, this is stored as a [`String`].
+    Json,
+    /// Raw binary data type.
+    Raw,
+    /// RPC data type.
+    ///
+    /// Internally, this is stored as a [`Vec<u8>`].
+    Rpc,
+    /// MessagePack data type.
+    ///
+    /// This is generally used for nested data.
+    Msgpack,
+    /// [`Vec<bool>`] data type.
+    #[serde(rename = "boolean[]")]
+    BooleanArray,
+    /// [`Vec<f64>`] data type.
+    #[serde(rename = "double[]")]
+    DoubleArray,
+    /// A [`Vec`] of integers data type.
+    ///
+    /// This includes Rust types like [`Vec<u16>`], [`Vec<i8>`], and [`Vec<u64>`].
+    #[serde(rename = "int[]")]
+    IntArray,
+    /// [`Vec<f32>`] data type.
+    #[serde(rename = "float[]")]
+    FloatArray,
+    /// [`Vec<String>`] data type.
+    #[serde(rename = "string[]")]
+    StringArray,
+
+    /// Vec of custom binary `struct` data types.
+    #[cfg(feature = "struct")]
+    #[serde(untagged, serialize_with = "serialize_struct_array", deserialize_with = "deserialize_struct_array")]
+    StructArray(String),
+
+    /// Custom binary `struct` data type.
+    #[cfg(feature = "struct")]
+    #[serde(untagged, serialize_with = "serialize_struct", deserialize_with = "deserialize_struct")]
+    Struct(String),
+
+    /// Google Protocol Buffers data type.
+    ///
+    /// Internally, this is stored as a [`Vec<u8>`].
+    #[cfg(feature = "protobuf")]
+    #[serde(untagged, serialize_with = "serialize_protobuf", deserialize_with = "deserialize_protobuf")]
+    Protobuf(String),
+
+    /// An unknown data type.
+    #[serde(untagged)]
+    Unknown(String),
+}
+
+impl DataType {
+    /// Creates a new `DataType` from an id.
+    ///
+    /// Returns [`Option::None`] if no `DataType` could be found with that id.
+    ///
+    /// Data type ids are as follows:
+    /// - `0`: [`Self::Boolean`]
+    /// - `1`: [`Self::Double`]
+    /// - `2`: [`Self::Int`]
+    /// - `3`: [`Self::Float`]
+    /// - `4`: [`Self::String`]
+    /// - `5`: [`Self::Raw`]
+    /// - `16`: [`Self::BooleanArray`]
+    /// - `17`: [`Self::DoubleArray`]
+    /// - `18`: [`Self::IntArray`]
+    /// - `19`: [`Self::FloatArray`]
+    /// - `20`: [`Self::StringArray`]
+    pub fn from_id(id: u32) -> Option<Self> {
+        use DataType as D;
+
+        match id {
+            0 => Some(D::Boolean),
+            1 => Some(D::Double),
+            2 => Some(D::Int),
+            3 => Some(D::Float),
+            4 => Some(D::String),
+            5 => Some(D::Raw),
+            16 => Some(D::BooleanArray),
+            17 => Some(D::DoubleArray),
+            18 => Some(D::IntArray),
+            19 => Some(D::FloatArray),
+            20 => Some(D::StringArray),
+
+            _ => None,
+        }
     }
 
-    /// Converts these options into a `msgpack` map.
-    pub fn into_msgpack_map(self) -> Vec<(rmpv::Value, rmpv::Value)> {
-        let mut map = Vec::new();
-        if let Some(periodic) = self.periodic {
-            map.push((rmpv::Value::String("periodic".into()), rmpv::Value::Integer(periodic.as_secs().into())));
-        };
-        if let Some(all) = self.all {
-            map.push((rmpv::Value::String("all".into()), rmpv::Value::Boolean(all)));
-        };
-        if let Some(topics_only) = self.topics_only {
-            map.push((rmpv::Value::String("topicsonly".into()), rmpv::Value::Boolean(topics_only)));
-        };
-        if let Some(prefix) = self.prefix {
-            map.push((rmpv::Value::String("prefix".into()), rmpv::Value::Boolean(prefix)));
-        };
-        // TODO: json value to rmpv value
-        map
+    /// Returns this `DataType` as an id.
+    ///
+    /// Data type ids are as follows:
+    /// - [`Self::Boolean`] : `0`
+    /// - [`Self::Double`] : `1`
+    /// - [`Self::Int`] : `2`
+    /// - [`Self::Float`] : `3`
+    /// - [`Self::String`] or [`Self::Json`] : `4`
+    /// - [`Self::Raw`], [`Self::Rpc`], or [`Self::Msgpack`] : `5`
+    /// - [`Self::BooleanArray`] : `16`
+    /// - [`Self::DoubleArray`] : `17`
+    /// - [`Self::IntArray`] : `18`
+    /// - [`Self::FloatArray`] : `19`
+    /// - [`Self::StringArray`] : `20`
+    ///
+    /// # Panics
+    ///
+    /// Panics if self is [`DataType::Unknown`].
+    pub fn as_id(&self) -> u32 {
+        use DataType as D;
+
+        match self {
+            D::Boolean => 0,
+            D::Double => 1,
+            D::Int => 2,
+            D::Float => 3,
+            D::String | D::Json => 4,
+            D::Raw | D::Rpc | D::Msgpack => 5,
+            D::BooleanArray => 16,
+            D::DoubleArray => 17,
+            D::IntArray => 18,
+            D::FloatArray => 19,
+            D::StringArray => 20,
+            D::Unknown(_) => panic!("unknown data type"),
+
+            #[cfg(feature = "struct")]
+            D::Struct(_) | D::StructArray(_) => 5,
+
+            #[cfg(feature = "protobuf")]
+            D::Protobuf(_) => 5,
+        }
     }
 }
 
-fn serialize_dur_as_micros<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+/// A piece of data that can be sent and received by a `NetworkTables` server.
+pub trait NetworkTableData {
+    /// Returns the `DataType` that this piece of data is.
+    fn data_type() -> DataType;
+
+    /// Creates a new piece of data from a generic `MessagePack` value.
+    fn from_value(value: &rmpv::Value) -> Option<Self> where Self: Sized;
+
+    /// Converts this into a generic `MessagePack` value.
+    fn into_value(self) -> rmpv::Value;
+}
+
+transparent!(
+    /// A JSON string.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    JsonString: String
+);
+transparent!(
+    /// Raw binary data.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    RawData: vec u8
+);
+transparent!(
+    /// Raw RPC data.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    Rpc: vec u8
+);
+transparent!(
+    /// Raw protobuf data.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    Protobuf: vec u8
+);
+
+impl_data_type!(bool [vec => BooleanArray] => Boolean; value @ value.as_bool());
+impl_data_type!(f64 [vec => DoubleArray] => Double; value @ value.as_f64());
+impl_data_type!(i8 [vec => IntArray] => Int; i);
+impl_data_type!(i16 [vec => IntArray] => Int; i);
+impl_data_type!(i32 [vec => IntArray] => Int; i);
+impl_data_type!(i64 [vec => IntArray] => Int; i);
+impl_data_type!(u8 [vec => IntArray] => Int; u);
+impl_data_type!(u16 [vec => IntArray] => Int; u);
+impl_data_type!(u32 [vec => IntArray] => Int; u);
+impl_data_type!(u64 [vec => IntArray] => Int; u);
+impl_data_type!(f32 [vec => FloatArray] => Float; value @ value.as_f64().map(|num| num as f32));
+impl_data_type!(String [vec => StringArray] => String; value @ value.as_str().map(|str| str.to_owned()));
+impl_data_type!(JsonString => Json; value @ value.as_str().map(|str| JsonString(str.to_owned())));
+impl_data_type!(bytes RawData => Raw);
+impl_data_type!(bytes Rpc => Rpc);
+impl_data_type!(rmpv::Value => Msgpack; value @ Some(value.clone()));
+
+/// Clients connected to the `NetworkTables` server.
+///
+/// The server will publish these to the meta topic `$clients`.
+// TODO: example for all meta topic data
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectedClients {
+    /// The connected clients.
+    pub clients: Vec<ConnectedClient>,
+}
+
+impl NetworkTableData for ConnectedClients {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut clients = Vec::new();
+        for client in value.as_array()? {
+            let (id, conn) = read_from_str_map!(client,
+                "id" = rmpv::Value::String(ref str) => str.to_string(),
+                "conn" = rmpv::Value::String(ref str) => str.to_string(),
+            );
+
+            clients.push(ConnectedClient { id, conn });
+        }
+
+        Some(Self { clients })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let clients = self.clients.into_iter()
+            .map(|client| rmpv::Value::Map(vec![
+                ("id".into(), rmpv::Value::String(client.id.into())),
+                ("conn".into(), rmpv::Value::String(client.conn.into())),
+            ]))
+            .collect();
+        rmpv::Value::Array(clients)
+    }
+}
+
+/// A client connected to a `NetworkTables` server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectedClient {
+    /// The client's name.
+    pub id: String,
+    /// Connection information, typically `host:port`.
+    pub conn: String,
+}
+
+/// Active subscriptions by some client.
+///
+/// The server will publish these to the meta topic `$clientsub$<client>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientSubscriptions {
+    /// The subscriptions.
+    pub subscriptions: Vec<ClientSubscription>,
+}
+
+/// Active subscriptions made by the server.
+///
+/// The server will publish these to the meta topic `$serversub`.
+pub type ServerSubscriptions = ClientSubscriptions;
+
+impl NetworkTableData for ClientSubscriptions {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut subscriptions = Vec::new();
+        for subscription in value.as_array()? {
+            let (uid, topics, options) = read_from_str_map!(subscription,
+                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "topics" = rmpv::Value::Array(ref array) => {
+                    let mut vec = Vec::new();
+                    for value in array {
+                        vec.push(value.as_str()?.to_owned());
+                    }
+                    vec
+                },
+                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+            );
+            subscriptions.push(ClientSubscription { uid, topics, options });
+        }
+
+        Some(Self { subscriptions })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let subscriptions = self.subscriptions.into_iter()
+            .map(|subscription| rmpv::Value::Map(vec![
+                ("uid".into(), subscription.uid.into()),
+                ("topics".into(), subscription.topics.into_iter()
+                    .map(|name| rmpv::Value::String(name.into()))
+                    .collect()),
+                ("options".into(), subscription.options.into_msgpack_map().into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(subscriptions)
+    }
+}
+
+/// A subscription made by a client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientSubscription {
+    /// The subscription's unique identifier.
+    pub uid: i32,
+    /// The topic names/prefixes that the subscriber is subscribing to.
+    pub topics: Vec<String>,
+    /// The subscription options.
+    pub options: SubscriptionOptions,
+}
+
+/// Subscriptions made to a topic.
+///
+/// The server will publish these to the meta topic `$sub$<topic>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Subscriptions {
+    /// The subscriptions attached to the topic.
+    pub subscriptions: Vec<Subscription>,
+}
+
+impl NetworkTableData for Subscriptions {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut subscriptions = Vec::new();
+        for subscription in value.as_array()? {
+            let (client, subuid, options) = read_from_str_map!(subscription,
+                "client" = rmpv::Value::String(ref str) => str.to_string(),
+                "subuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+            );
+            subscriptions.push(Subscription { client, subuid, options });
+        }
+
+        Some(Self { subscriptions })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let subscriptions = self.subscriptions.into_iter()
+            .map(|subscription| rmpv::Value::Map(vec![
+                ("client".into(), subscription.client.into()),
+                ("subuid".into(), subscription.subuid.into()),
+                ("options".into(), subscription.options.into_msgpack_map().into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(subscriptions)
+    }
+}
+
+/// A subscription to a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Subscription {
+    /// The client's name, or an empty string for server subscriptions.
+    pub client: String,
+    /// The subscription's unique identifier.
+    pub subuid: i32,
+    /// The subscription options.
+    pub options: SubscriptionOptions,
+}
+
+/// Active publishers made by some client.
+///
+/// The server will publish these to the meta topic `$clientpub$<client>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPublishers {
+    /// The publishers.
+    pub publishers: Vec<ClientPublisher>,
+}
+
+/// Active publishers made by the server.
+///
+/// The server will publish these to the meta topic `$serverpub`.
+pub type ServerPublishers = ClientPublishers;
+
+impl NetworkTableData for ClientPublishers {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut publishers = Vec::new();
+        for publisher in value.as_array()? {
+            let (uid, topic) = read_from_str_map!(publisher,
+                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                "topic" = rmpv::Value::String(ref string) => string.to_string(),
+            );
+            publishers.push(ClientPublisher { uid, topic });
+        }
+
+        Some(Self { publishers })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let publishers = self.publishers.into_iter()
+            .map(|publisher| rmpv::Value::Map(vec![
+                ("uid".into(), publisher.uid.into()),
+                ("topic".into(), publisher.topic.into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(publishers)
+    }
+}
+
+/// A publisher made by some client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPublisher {
+    /// This publisher's unique identifier.
+    pub uid: i32,
+    /// The topic the publisher is publishing to.
+    pub topic: String,
+}
+
+/// Publishers made to a topic.
+///
+/// The server will publish these to the meta topic `$pub$<topic>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publishers {
+    /// The publishers attached to the topic.
+    pub publishers: Vec<Publisher>,
+}
+
+impl NetworkTableData for Publishers {
+    fn data_type() -> DataType {
+        DataType::Msgpack
+    }
+
+    fn from_value(value: &rmpv::Value) -> Option<Self> {
+        let mut publishers = Vec::new();
+        for publisher in value.as_array()? {
+            let (client, pubuid) = read_from_str_map!(publisher,
+                "client" = rmpv::Value::String(ref string) => string.to_string(),
+                "pubuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+            );
+            publishers.push(Publisher { client, pubuid });
+        }
+
+        Some(Self { publishers })
+    }
+
+    fn into_value(self) -> rmpv::Value {
+        let publishers = self.publishers.into_iter()
+            .map(|publisher| rmpv::Value::Map(vec![
+                ("client".into(), publisher.client.into()),
+                ("pubuid".into(), publisher.pubuid.into()),
+            ]))
+            .collect();
+        rmpv::Value::Array(publishers)
+    }
+}
+
+/// A publisher to a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publisher {
+    /// The client's name, or an empty string for server publishers.
+    pub client: String,
+    /// The publisher's unique identifier.
+    pub pubuid: i32,
+}
+
+#[cfg(feature = "struct")]
+fn serialize_struct<S>(type_name: &str, serializer: S) -> Result<S::Ok, S::Error>
 where S: Serializer
 {
-    serializer.serialize_u64(duration.as_micros().try_into().map_err(S::Error::custom)?)
+    serializer.serialize_str(&format!("struct:{type_name}"))
 }
 
-fn serialize_dur_as_secs<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
-where S: Serializer
-{
-    if let Some(duration) = duration {
-        serializer.serialize_f64(duration.as_secs_f64())
-    } else {
-        serializer.serialize_none()
-    }
-}
-
-fn deserialize_micros_as_dur<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+#[cfg(feature = "struct")]
+fn deserialize_struct<'de, D>(deserializer: D) -> Result<String, D::Error>
 where D: Deserializer<'de>
 {
-    deserializer.deserialize_u64(DurationMicrosVisitor)
+    deserializer.deserialize_identifier(StructDataVisitor)
 }
 
-struct DurationMicrosVisitor;
+#[cfg(feature = "struct")]
+struct StructDataVisitor;
 
-impl Visitor<'_> for DurationMicrosVisitor {
-    type Value = Duration;
+#[cfg(feature = "struct")]
+impl Visitor<'_> for StructDataVisitor {
+    type Value = String;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "a valid micros duration")
+        write!(formatter, "a valid struct type")
     }
 
-    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
     where E: serde::de::Error
     {
-        self.visit_u64(v.try_into().map_err(E::custom)?)
+        let (left, right) = v.split_once(":").ok_or_else(|| serde::de::Error::custom("expected colon in struct type parsing"))?;
+        if left != "struct" { return Err(serde::de::Error::custom("expected struct type to be prefixed with `struct:`")); };
+        Ok(right.to_owned())
+    }
+}
+
+#[cfg(feature = "struct")]
+fn serialize_struct_array<S>(type_name: &str, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer
+{
+    serializer.serialize_str(&format!("struct:{type_name}[]"))
+}
+
+#[cfg(feature = "struct")]
+fn deserialize_struct_array<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de>
+{
+    deserializer.deserialize_identifier(StructDataArrayVisitor)
+}
+
+#[cfg(feature = "struct")]
+struct StructDataArrayVisitor;
+
+#[cfg(feature = "struct")]
+impl Visitor<'_> for StructDataArrayVisitor {
+    type Value = String;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a valid struct type")
     }
 
-    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
     where E: serde::de::Error
     {
-        Ok(Duration::from_micros(v))
+        let (left, right) = v.split_once(":").ok_or_else(|| serde::de::Error::custom("expected colon in struct type parsing"))?;
+        if left != "struct" { return Err(serde::de::Error::custom("expected struct type to be prefixed with `struct:`")); };
+        right.strip_suffix("[]").map(str::to_owned).ok_or_else(|| serde::de::Error::custom("expected array type to end with `[]`"))
+    }
+}
+
+#[cfg(feature = "protobuf")]
+fn serialize_protobuf<S>(type_name: &str, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer
+{
+    serializer.serialize_str(&format!("proto:{type_name}"))
+}
+
+#[cfg(feature = "protobuf")]
+fn deserialize_protobuf<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de>
+{
+    deserializer.deserialize_identifier(ProtobufDataVisitor)
+}
+
+#[cfg(feature = "protobuf")]
+struct ProtobufDataVisitor;
+
+#[cfg(feature = "protobuf")]
+impl Visitor<'_> for ProtobufDataVisitor {
+    type Value = String;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a valid protobuf type")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where E: serde::de::Error
+    {
+        let (left, right) = v.split_once(":").ok_or_else(|| serde::de::Error::custom("expected colon in protobuf type parsing"))?;
+        if left != "proto" { return Err(serde::de::Error::custom("expected struct type to be prefixed with `proto:`")); };
+        Ok(right.to_owned())
     }
 }
 

@@ -8,7 +8,7 @@
 
 use protobuf::{Message, MessageFull};
 
-use crate::{data::r#type::{DataType, NetworkTableData}};
+use crate::{data::{DataType, NetworkTableData}};
 
 include!(concat!(env!("OUT_DIR"), "/protobuf/mod.rs"));
 

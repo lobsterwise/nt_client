@@ -1,6 +1,6 @@
 //! An example of using a reconnect handler.
 
-use nt_client::{data::r#type::NetworkTableData, error::ReconnectError, subscribe::ReceivedMessage};
+use nt_client::{data::NetworkTableData, error::ReconnectError, subscribe::ReceivedMessage};
 
 #[tokio::main]
 async fn main() {

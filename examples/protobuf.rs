@@ -1,6 +1,6 @@
 //! An example serializing and deserializing protobufs using the `protobuf` and `math` feature flag.
 
-use nt_client::{Client, data::{Properties, r#type::{DataType, NetworkTableData}}, math::{Pose2d, Rotation2d, Translation2d}, protobuf::{Protobuf, ProtobufData}, subscribe::ReceivedMessage};
+use nt_client::{Client, data::{DataType, NetworkTableData}, math::{Pose2d, Rotation2d, Translation2d}, protobuf::{Protobuf, ProtobufData}, subscribe::ReceivedMessage, topic::Properties};
 
 #[tokio::main]
 async fn main() {

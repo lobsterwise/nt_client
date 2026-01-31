@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use nt_client::{data::SubscriptionOptions, path, subscribe::ReceivedMessage, topic::TopicPath, Client};
+use nt_client::{subscribe::SubscriptionOptions, path, subscribe::ReceivedMessage, topic::TopicPath, Client};
 
 #[tokio::main]
 async fn main() {

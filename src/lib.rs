@@ -56,8 +56,6 @@
 use core::panic;
 use std::{collections::VecDeque, convert::Into, error::Error, fmt::Debug, net::Ipv4Addr, ops::Deref, sync::Arc, time::{Duration, Instant}};
 
-use data::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unpublish, Unsubscribe};
-use error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, ReceiveMessageError, ReconnectError, SendMessageError, UpdateTimeError};
 use futures_util::{stream::{SplitSink, SplitStream}, Future, SinkExt, StreamExt, TryStreamExt};
 use time::ext::InstantExt;
 use tokio::{net::TcpStream, select, sync::{broadcast, mpsc, Notify, RwLock}, task::JoinHandle, time::{interval, timeout}};
@@ -65,6 +63,9 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, Byt
 use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::{error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, ReceiveMessageError, ReconnectError, SendMessageError, UpdateTimeError}, net::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unpublish, Unsubscribe}};
+
+mod net;
 pub mod error;
 pub mod data;
 pub mod topic;
@@ -80,11 +81,11 @@ pub mod r#struct;
 #[cfg(feature = "protobuf")]
 pub mod protobuf;
 
-pub(crate) type NTServerSender = broadcast::Sender<Arc<ServerboundMessage>>;
-pub(crate) type NTServerReceiver = broadcast::Receiver<Arc<ServerboundMessage>>;
+type NTServerSender = broadcast::Sender<Arc<ServerboundMessage>>;
+type NTServerReceiver = broadcast::Receiver<Arc<ServerboundMessage>>;
 
-pub(crate) type NTClientSender = broadcast::Sender<Arc<ClientboundData>>;
-pub(crate) type NTClientReceiver = broadcast::Receiver<Arc<ClientboundData>>;
+type NTClientSender = broadcast::Sender<Arc<ClientboundData>>;
+type NTClientReceiver = broadcast::Receiver<Arc<ClientboundData>>;
 
 /// A cheaply-clonable handle to the client used to create topics.
 pub struct ClientHandle {

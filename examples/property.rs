@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use nt_client::{data::Properties, publish::UpdateProps, Client};
+use nt_client::{Client, publish::UpdateProps, topic::Properties};
 use serde_json::json;
 
 #[tokio::main]

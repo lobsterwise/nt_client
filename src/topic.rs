@@ -4,7 +4,9 @@
 
 use std::{collections::{HashMap, VecDeque}, fmt::{Debug, Display}, time::Duration};
 
-use crate::{data::{r#type::{DataType, NetworkTableData}, Announce, Properties, SubscriptionOptions, Unannounce}, error::ConnectionClosedError, publish::{GenericPublisher, NewPublisherError, Publisher}, subscribe::Subscriber, ClientHandle};
+use serde::{Deserialize, Serialize};
+
+use crate::{ClientHandle, data::{DataType, NetworkTableData}, error::ConnectionClosedError, net::{Announce, Unannounce}, publish::{GenericPublisher, NewPublisherError, Publisher}, subscribe::{Subscriber, SubscriptionOptions}};
 
 pub mod collection;
 
@@ -355,6 +357,42 @@ impl AnnouncedTopics {
     }
 }
 
+/// Topic properties.
+///
+/// These are properties attached to all topics and are represented as JSON. To add extra
+/// properties, use the `extra` field.
+///
+/// Docs taken and summarized from [here](https://github.com/wpilibsuite/allwpilib/blob/main/ntcore/doc/networktables4.adoc#properties).
+// TODO: test if server recognizes non-bool properties
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub struct Properties {
+    /// Persistent flag.
+    ///
+    /// If set to `true`, the server will save this value and it will be restored during server
+    /// startup. It will also not be deleted by the server if the last publisher stops publishing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent: Option<bool>,
+    /// Retained flag.
+    ///
+    /// If set to `true`, the server will not delete this topic when the last publisher stops
+    /// publishing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retained: Option<bool>,
+    /// Cached flag.
+    ///
+    /// If set to `false`, servers and clients will not store the value of this topic meaning only
+    /// values updates will be avaible for the topic.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached: Option<bool>,
+
+    /// Extra property values.
+    ///
+    /// This should be used for generic properties not officially recognized by a `NetworkTables` server.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
 /// Represents a slash (`/`) deliminated path.
 ///
 /// This is especially useful when trying to parse nested data, such as from Shuffleboard
@@ -416,7 +454,7 @@ impl AnnouncedTopics {
 /// ```
 /// Parsing topic name:
 /// ```no_run
-/// use nt_client::{topic::TopicPath, data::SubscriptionOptions, subscribe::ReceivedMessage, Client};
+/// use nt_client::{topic::TopicPath, subscribe::{ReceivedMessage, SubscriptionOptions}, Client};
 ///
 /// # tokio_test::block_on(async {
 /// let client = Client::new(Default::default());

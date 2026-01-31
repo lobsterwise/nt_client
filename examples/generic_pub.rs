@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, io::stdin};
 
-use nt_client::{data::r#type::DataType, publish::GenericPublisher, Client, ClientHandle};
+use nt_client::{data::DataType, publish::GenericPublisher, Client, ClientHandle};
 use tokio::{select, sync::{broadcast, mpsc}};
 use tracing::Level;
 

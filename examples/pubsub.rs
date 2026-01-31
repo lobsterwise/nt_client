@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use nt_client::{data::r#type::NetworkTableData, subscribe::ReceivedMessage, Client, NTAddr, NewClientOptions};
+use nt_client::{Client, NTAddr, NewClientOptions, data::NetworkTableData, subscribe::ReceivedMessage};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]

@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, iter::FusedIterator};
 
-use crate::{data::SubscriptionOptions, error::ConnectionClosedError, subscribe::Subscriber, ClientHandle};
+use crate::{ClientHandle, error::ConnectionClosedError, subscribe::{Subscriber, SubscriptionOptions}};
 
 use super::Topic;
 

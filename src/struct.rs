@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 
 use byte::{ByteBuffer, ByteReader};
 
-use crate::data::r#type::{DataType, NetworkTableData};
+use crate::data::{DataType, NetworkTableData};
 
 pub mod byte;
 pub mod parse;
