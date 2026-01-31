@@ -63,6 +63,9 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, Byt
 use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic};
 use tracing::{debug, error, info, trace, warn};
 
+#[cfg(feature = "struct")]
+use crate::r#struct::StructData;
+
 use crate::{error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, ReceiveMessageError, ReconnectError, SendMessageError, UpdateTimeError}, net::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unpublish, Unsubscribe}};
 
 mod net;
@@ -178,6 +181,45 @@ impl ClientHandle {
     /// ```
     pub fn schema_topic(&self) -> Topic {
         self.topic("/.schema")
+    }
+
+    /// Returns a schema topic for struct `T`.
+    ///
+    /// Publish to this topic with the struct's schema to let the server and other clients recognize the struct.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use nt_client::{Client, data::DataType, r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}}};
+    ///
+    /// struct MyStruct(pub i32);
+    ///
+    /// impl StructData for MyStruct {
+    ///     fn struct_type_name() -> String {
+    ///         "mystruct".to_owned()
+    ///     }
+    ///
+    ///     fn schema() -> StructSchema {
+    ///         StructSchema("int32 number".to_owned())
+    ///     }
+    ///
+    ///     fn pack(self, buf: &mut ByteBuffer) {
+    ///         buf.write_i32(self.0);
+    ///     }
+    ///
+    ///     fn unpack(read: &mut ByteReader) -> Option<Self> {
+    ///         read.read_i32().map(Self)
+    ///     }
+    /// }
+    ///
+    /// let client = Client::new(Default::default());
+    /// let schema_topic = client.struct_schema_topic::<MyStruct>();
+    /// assert_eq!(schema_topic.name(), "/.schema/mystruct");
+    /// // publish MyStruct::schema() to schema_topic
+    /// ```
+    #[cfg(feature = "struct")]
+    pub fn struct_schema_topic<T: StructData>(&self) -> Topic {
+        self.schema_topic().child(format!("/{}", T::struct_type_name()))
     }
 
     /// Returns the `$clients` meta topic.
