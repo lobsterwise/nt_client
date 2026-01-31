@@ -127,8 +127,8 @@ impl Topic {
     /// assert_eq!(number_topic.name(), "/SmartDashboard/mynumber");
     /// assert_eq!(boolean_topic.name(), "/SmartDashboard/myboolean");
     /// ```
-    pub fn child(&self, name: &str) -> Self {
-        Self::new(self.name.clone() + name, self.handle.clone())
+    pub fn child(&self, name: impl AsRef<str>) -> Self {
+        Self::new(self.name.clone() + name.as_ref(), self.handle.clone())
     }
 
     /// Publishes to this topic with the data type `T`.
