@@ -265,7 +265,7 @@ impl GenericPublisher {
     ) -> Result<Self, NewPublisherError> {
         let id = rand::random();
         let pub_message = ServerboundTextData::Publish(Publish { name, pubuid: id, r#type: r#type.clone(), properties });
-        ws_sender.send(ServerboundMessage::Text(pub_message).into()).map_err(|_| broadcast::error::RecvError::Closed)?;
+        ws_sender.send(ServerboundMessage::Text(pub_message)).map_err(|_| broadcast::error::RecvError::Closed)?;
 
         let (name, server_type, id) = {
             recv_until(&mut ws_recv, |data| {
@@ -280,7 +280,7 @@ impl GenericPublisher {
         if r#type != server_type {
             let data = ServerboundTextData::Unpublish(Unpublish { pubuid: id });
             // if the receiver is dropped, the ws connection is closed
-            let _ = ws_sender.send(ServerboundMessage::Text(data).into());
+            let _ = ws_sender.send(ServerboundMessage::Text(data));
             return Err(NewPublisherError::MismatchedType { server: server_type, client: r#type });
         };
 
@@ -298,7 +298,7 @@ impl GenericPublisher {
     ) -> Result<Self, ConnectionClosedError> {
         let id = rand::random();
         let pub_message = ServerboundTextData::Publish(Publish { name: name.clone(), pubuid: id, r#type: r#type.clone(), properties });
-        ws_sender.send(ServerboundMessage::Text(pub_message).into()).map_err(|_| ConnectionClosedError)?;
+        ws_sender.send(ServerboundMessage::Text(pub_message)).map_err(|_| ConnectionClosedError)?;
 
         // assume the publisher will be made within 0.1s
         tokio::time::sleep(Duration::from_secs_f64(0.1)).await;
@@ -391,7 +391,7 @@ impl GenericPublisher {
         self.ws_sender.send(ServerboundMessage::Text(ServerboundTextData::SetProperties(SetProperties {
             name: self.topic.clone(),
             update: new_props.into(),
-        })).into()).map_err(|_| broadcast::error::RecvError::Closed)?;
+        }))).map_err(|_| broadcast::error::RecvError::Closed)?;
 
         recv_until(&mut self.ws_recv, |data| {
             if let ClientboundData::Text(ClientboundTextData::Properties(PropertiesData { ref name, .. })) = *data {
@@ -412,7 +412,7 @@ impl GenericPublisher {
         };
 
         let binary = BinaryData::new(self.id, timestamp, data);
-        self.ws_sender.send(ServerboundMessage::Binary(binary).into()).map_err(|_| ConnectionClosedError)?;
+        self.ws_sender.send(ServerboundMessage::Binary(binary)).map_err(|_| ConnectionClosedError)?;
         Ok(())
     }
 }
@@ -421,7 +421,7 @@ impl Drop for GenericPublisher {
     fn drop(&mut self) {
         let data = ServerboundTextData::Unpublish(Unpublish { pubuid: self.id });
         // if the receiver is dropped, the ws connection is closed
-        let _ = self.ws_sender.send(ServerboundMessage::Text(data).into());
+        let _ = self.ws_sender.send(ServerboundMessage::Text(data));
     }
 }
 

@@ -87,19 +87,22 @@ pub mod r#struct;
 #[cfg(feature = "protobuf")]
 pub mod protobuf;
 
-type NTServerSender = broadcast::Sender<Arc<ServerboundMessage>>;
-type NTServerReceiver = broadcast::Receiver<Arc<ServerboundMessage>>;
+type NTServerSender = mpsc::UnboundedSender<ServerboundMessage>;
+type NTServerReceiver = mpsc::UnboundedReceiver<ServerboundMessage>;
 
 type NTClientSender = broadcast::Sender<Arc<ClientboundData>>;
 type NTClientReceiver = broadcast::Receiver<Arc<ClientboundData>>;
 
 /// A cheaply-clonable handle to the client used to create topics.
+#[derive(Clone)]
 pub struct ClientHandle {
-    pub(crate) time: Arc<RwLock<NetworkTablesTime>>,
-    pub(crate) announced_topics: Arc<RwLock<AnnouncedTopics>>,
+    time: Arc<RwLock<NetworkTablesTime>>,
+    announced_topics: Arc<RwLock<AnnouncedTopics>>,
 
-    pub(crate) send_ws: (NTServerSender, NTServerReceiver),
-    pub(crate) recv_ws: (NTClientSender, NTClientReceiver),
+    /// Send data from the client to the server.
+    server_send: NTServerSender,
+    /// Sent data from the server to the client.
+    client_send: NTClientSender,
 }
 
 impl Debug for ClientHandle {
@@ -111,31 +114,14 @@ impl Debug for ClientHandle {
     }
 }
 
-impl Clone for ClientHandle {
-    fn clone(&self) -> Self {
-        Self {
-            time: self.time.clone(),
-            announced_topics: self.announced_topics.clone(),
-            send_ws: (self.send_ws.0.clone(), self.send_ws.0.subscribe()),
-            recv_ws: (self.recv_ws.0.clone(), self.recv_ws.0.subscribe()),
-        }
-    }
-}
-
-impl Default for ClientHandle {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ClientHandle {
-    fn new() -> Self {
+    fn new(server_send: NTServerSender, client_send: NTClientSender) -> Self {
         Self {
             time: Default::default(),
             announced_topics: Default::default(),
 
-            send_ws: broadcast::channel(1024),
-            recv_ws: broadcast::channel(1024),
+            server_send,
+            client_send,
         }
     }
 
@@ -311,6 +297,8 @@ pub struct Client {
     options: NewClientOptions,
 
     handle: ClientHandle,
+    /// Data to be sent from the client to the server.
+    server_recv: NTServerReceiver,
 }
 
 impl Debug for Client {
@@ -348,11 +336,14 @@ impl Client {
             Err(err) => panic!("{err}"),
         };
 
+        let (server_send, server_recv) = mpsc::unbounded_channel();
+        let client_send = broadcast::Sender::new(1024);
         Client {
             addr,
             options,
 
-            handle: Default::default(),
+            handle: ClientHandle::new(server_send, client_send),
+            server_recv,
         }
     }
 
@@ -400,14 +391,14 @@ impl Client {
 
         let pong_notify_recv = Arc::new(Notify::new());
         let pong_notify_send = pong_notify_recv.clone();
-        let ping_task = Client::start_ping_task(pong_notify_recv, handle.send_ws.0.clone(), self.options.ping_interval, self.options.response_timeout);
+        let ping_task = Client::start_ping_task(pong_notify_recv, handle.server_send.clone(), self.options.ping_interval, self.options.response_timeout);
 
         let (update_time_sender, update_time_recv) = mpsc::channel(1);
-        let update_time_task = Client::start_update_time_task(self.options.update_time_interval, handle.time(), handle.send_ws.0.clone(), update_time_recv);
+        let update_time_task = Client::start_update_time_task(self.options.update_time_interval, handle.time(), handle.server_send.clone(), update_time_recv);
 
         let announced_topics = handle.announced_topics.clone();
-        let write_task = Client::start_write_task(handle.send_ws.1, write);
-        let read_task = Client::start_read_task(read, update_time_sender, pong_notify_send, announced_topics, handle.recv_ws.0);
+        let write_task = Client::start_write_task(self.server_recv, write);
+        let read_task = Client::start_read_task(read, update_time_sender, pong_notify_send, announced_topics, handle.client_send);
 
         let result = select! {
             task = ping_task => task?.map_err(|err| err.into()),
@@ -448,7 +439,7 @@ impl Client {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                ws_sender.send(ServerboundMessage::Ping.into()).map_err(|_| ConnectionClosedError)?;
+                ws_sender.send(ServerboundMessage::Ping).map_err(|_| ConnectionClosedError)?;
 
                 if (timeout(response_timeout, pong_recv.notified()).await).is_err() {
                     return Err(PingError::PongTimeout);
@@ -477,7 +468,7 @@ impl Client {
                     Duration::ZERO,
                     client_time.whole_microseconds().try_into().map_err(|_| UpdateTimeError::TimeOverflow)?,
                 );
-                ws_sender.send(ServerboundMessage::Binary(data).into()).map_err(|_| ConnectionClosedError)?;
+                ws_sender.send(ServerboundMessage::Binary(data)).map_err(|_| ConnectionClosedError)?;
 
                 if let Some((timestamp, client_send_time)) = time_recv.recv().await {
                     let offset = {
@@ -503,12 +494,12 @@ impl Client {
         tokio::spawn(async move {
             loop {
                 match server_recv.recv().await {
-                    Ok(message) => {
-                        let packet = match &*message {
+                    Some(message) => {
+                        let packet = match message {
                             ServerboundMessage::Text(json) => {
                                 match json {
                                     ServerboundTextData::Unpublish(Unpublish { pubuid }) => debug!("[pub {pubuid}] unpublished"),
-                                    ServerboundTextData::Subscribe(Subscribe { topics, subuid, options }) => {
+                                    ServerboundTextData::Subscribe(Subscribe { ref topics, subuid, ref options }) => {
                                         debug!("[sub {subuid}] subscribed to {topics:?} with {options:?}");
                                     },
                                     ServerboundTextData::Unsubscribe(Unsubscribe { subuid }) => debug!("[sub {subuid}] unsubscribed"),
@@ -520,7 +511,7 @@ impl Client {
                                 if binary.id != -1 {
                                     debug!("[pub {}] set to {} at {:?}", binary.id, binary.data, binary.timestamp);
                                 };
-                                rmp_serde::to_vec(binary).map_err(|err| err.into()).map(|bytes| Message::Binary(bytes.into()))
+                                rmp_serde::to_vec(&binary).map_err(|err| err.into()).map(|bytes| Message::Binary(bytes.into()))
                             },
                             ServerboundMessage::Ping => Ok(Message::Ping(Bytes::new())),
                         };
@@ -532,8 +523,7 @@ impl Client {
                             Err(err) => return Err(err),
                         };
                     },
-                    Err(broadcast::error::RecvError::Closed) => return Err(SendMessageError::ConnectionClosed(ConnectionClosedError)),
-                    Err(broadcast::error::RecvError::Lagged(amount)) => warn!("server writer lagged {amount}!"),
+                    None => return Err(SendMessageError::ConnectionClosed(ConnectionClosedError)),
                 };
             }
         })
@@ -642,7 +632,8 @@ impl Client {
                             },
                         };
 
-                        client_sender.send(data.into()).map_err(|_| ConnectionClosedError)?;
+                        // a client receiver does not need to exist for the connection to be alive
+                        let _ = client_sender.send(data.into());
                     }
                 };
 

@@ -144,7 +144,7 @@ impl Topic {
     ///
     /// [`Client`]: crate::Client
     pub async fn publish<T: NetworkTableData>(&self, properties: Properties) -> Result<Publisher<T>, NewPublisherError> {
-        Publisher::new(self.name.clone(), properties, self.handle.time(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        Publisher::new(self.name.clone(), properties, self.handle.time(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 
     /// Publishes to this topic with the data type `T`, not waiting for an nnounce message from the
@@ -164,7 +164,7 @@ impl Topic {
     /// [issue #7680]: https://github.com/wpilibsuite/allwpilib/issues/7680
     #[cfg(feature = "publish_bypass")]
     pub async fn publish_bypass<T: NetworkTableData>(&self, properties: Properties) -> Result<Publisher<T>, ConnectionClosedError> {
-        Publisher::new_bypass(self.name.clone(), properties, self.handle.time(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        Publisher::new_bypass(self.name.clone(), properties, self.handle.time(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 
     /// Publishes to this topic with some data type.
@@ -183,7 +183,7 @@ impl Topic {
     ///
     /// [`Client`]: crate::Client
     pub async fn generic_publish(&self, r#type: DataType, properties: Properties) -> Result<GenericPublisher, NewPublisherError> {
-        GenericPublisher::new(self.name.clone(), properties, r#type, self.handle.time(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        GenericPublisher::new(self.name.clone(), properties, r#type, self.handle.time(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 
     /// Publishes to this topic with some data type, not waiting for an nnounce message from the
@@ -208,7 +208,7 @@ impl Topic {
     /// [issue #7680]: https://github.com/wpilibsuite/allwpilib/issues/7680
     #[cfg(feature = "publish_bypass")]
     pub async fn generic_publish_bypass(&self, r#type: DataType, properties: Properties) -> Result<GenericPublisher, ConnectionClosedError> {
-        GenericPublisher::new_bypass(self.name.clone(), properties, r#type, self.handle.time(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        GenericPublisher::new_bypass(self.name.clone(), properties, r#type, self.handle.time(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 
     /// Subscribes to this topic.
@@ -217,7 +217,7 @@ impl Topic {
     ///
     /// [`Client`]: crate::Client
     pub async fn subscribe(&self, options: SubscriptionOptions) -> Result<Subscriber, ConnectionClosedError> {
-        Subscriber::new(vec![self.name.clone()], options, self.handle.announced_topics.clone(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        Subscriber::new(vec![self.name.clone()], options, self.handle.announced_topics.clone(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 }
 

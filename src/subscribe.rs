@@ -105,7 +105,7 @@ impl Subscriber {
         };
 
         let sub_message = ServerboundTextData::Subscribe(Subscribe { topics: topics.clone(), subuid: id, options: options.clone() });
-        ws_sender.send(ServerboundMessage::Text(sub_message).into()).map_err(|_| ConnectionClosedError)?;
+        ws_sender.send(ServerboundMessage::Text(sub_message)).map_err(|_| ConnectionClosedError)?;
 
         Ok(Self {
             topics,
@@ -211,7 +211,7 @@ impl Drop for Subscriber {
     fn drop(&mut self) {
         let unsub_message = ServerboundTextData::Unsubscribe(Unsubscribe { subuid: self.id });
         // if the receiver is dropped, the ws connection is closed
-        let _ = self.ws_sender.send(ServerboundMessage::Text(unsub_message).into());
+        let _ = self.ws_sender.send(ServerboundMessage::Text(unsub_message));
     }
 }
 

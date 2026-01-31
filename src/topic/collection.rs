@@ -80,7 +80,7 @@ impl TopicCollection {
     ///
     /// [`Client`]: crate::Client
     pub async fn subscribe(&self, options: SubscriptionOptions) -> Result<Subscriber, ConnectionClosedError> {
-        Subscriber::new(self.names.clone(), options, self.handle.announced_topics.clone(), self.handle.send_ws.0.clone(), self.handle.recv_ws.0.subscribe()).await
+        Subscriber::new(self.names.clone(), options, self.handle.announced_topics.clone(), self.handle.server_send.clone(), self.handle.client_send.subscribe()).await
     }
 }
 
