@@ -63,6 +63,9 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, Byt
 use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic};
 use tracing::{debug, error, info, trace, warn};
 
+#[cfg(feature = "protobuf")]
+use crate::protobuf::ProtobufData;
+
 #[cfg(feature = "struct")]
 use crate::r#struct::StructData;
 
@@ -220,6 +223,12 @@ impl ClientHandle {
     #[cfg(feature = "struct")]
     pub fn struct_schema_topic<T: StructData>(&self) -> Topic {
         self.schema_topic().child(format!("/struct:{}", T::struct_type_name()))
+    }
+
+    /// Returns a protobuf schema topic for `T`.
+    #[cfg(feature = "protobuf")]
+    pub fn protobuf_schema_topic<T: ProtobufData>(&self) -> Topic {
+        self.schema_topic().child(format!("/proto:{}", T::proto_type_name()))
     }
 
     /// Returns the `$clients` meta topic.
