@@ -50,9 +50,9 @@ pub trait ProtobufData {
         Self::Proto::descriptor().full_name().to_owned()
     }
 
-    /// This protobuf message's file descriptor.
-    fn file_descriptor() -> FileDescriptorProto {
-        MessageDescriptor::for_type::<Self::Proto>().file_descriptor_proto().clone()
+    /// This protobuf message's descriptor.
+    fn message_descriptor() -> MessageDescriptor {
+        MessageDescriptor::for_type::<Self::Proto>()
     }
 
     /// Converts from a `protobuf` message.
