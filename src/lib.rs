@@ -152,7 +152,7 @@ impl ClientHandle {
         TopicCollection::new(names, self.clone())
     }
 
-    /// Returns the `/.schema` topic.
+    /// Returns the `/.schema/` topic.
     ///
     /// Topics using this prefix will publish struct schemas and protobuf schemas. Support for
     /// parsing these schemas can be enabled by the `struct` and `protobuf` features, respectively.
@@ -164,12 +164,12 @@ impl ClientHandle {
     ///
     /// let client = Client::new(Default::default());
     ///
-    /// assert_eq!(client.schema_topic().name(), "/.schema");
-    /// assert_eq!(client.schema_topic().child("/customstruct").name(), "/.schema/customstruct");
-    /// assert_eq!(client.schema_topic().child("/myproto").name(), "/.schema/myproto");
+    /// assert_eq!(client.schema_topic().name(), "/.schema/");
+    /// assert_eq!(client.schema_topic().child("customstruct").name(), "/.schema/customstruct");
+    /// assert_eq!(client.schema_topic().child("myproto").name(), "/.schema/myproto");
     /// ```
     pub fn schema_topic(&self) -> Topic {
-        self.topic("/.schema")
+        self.topic("/.schema/")
     }
 
     /// Returns a schema topic for struct `T`.
@@ -208,13 +208,13 @@ impl ClientHandle {
     /// ```
     #[cfg(feature = "struct")]
     pub fn struct_schema_topic<T: StructData>(&self) -> Topic {
-        self.schema_topic().child(format!("/struct:{}", T::struct_type_name()))
+        self.schema_topic().child(format!("struct:{}", T::struct_type_name()))
     }
 
     /// Returns a protobuf schema topic for `T`.
     #[cfg(feature = "protobuf")]
     pub fn protobuf_schema_topic<T: ProtobufData>(&self) -> Topic {
-        self.schema_topic().child(format!("/proto:{}", T::proto_type_name()))
+        self.schema_topic().child(format!("proto:{}", T::proto_type_name()))
     }
 
     /// Returns the `$clients` meta topic.
