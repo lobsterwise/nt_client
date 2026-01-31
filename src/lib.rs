@@ -160,6 +160,26 @@ impl ClientHandle {
         TopicCollection::new(names, self.clone())
     }
 
+    /// Returns the `/.schema` topic.
+    ///
+    /// Topics using this prefix will publish struct schemas and protobuf schemas. Support for
+    /// parsing these schemas can be enabled by the `struct` and `protobuf` features, respectively.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use nt_client::Client;
+    ///
+    /// let client = Client::new(Default::default());
+    ///
+    /// assert_eq!(client.schema_topic().name(), "/.schema");
+    /// assert_eq!(client.schema_topic().child("/customstruct").name(), "/.schema/customstruct");
+    /// assert_eq!(client.schema_topic().child("/myproto").name(), "/.schema/myproto");
+    /// ```
+    pub fn schema_topic(&self) -> Topic {
+        self.topic("/.schema")
+    }
+
     /// Returns the `$clients` meta topic.
     ///
     /// You should only subscribe to this topic, publishing will likely break other connected
