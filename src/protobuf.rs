@@ -64,7 +64,7 @@ pub trait ProtobufData {
 
 impl NetworkTableData for FileDescriptorProto {
     fn data_type() -> DataType {
-        DataType::Protobuf(FileDescriptorProto::descriptor().full_name().to_owned())
+        DataType::Protobuf(FileDescriptorProto::descriptor().name().to_owned())
     }
 
     fn from_value(value: rmpv::Value) -> Option<Self> {
