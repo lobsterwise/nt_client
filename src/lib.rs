@@ -55,7 +55,7 @@
 //! [issue #7680]: https://github.com/wpilibsuite/allwpilib/issues/7680
 
 use core::panic;
-use std::{collections::VecDeque, convert::Into, error::Error, fmt::Debug, net::Ipv4Addr, sync::Arc, time::{Duration, Instant}};
+use std::{collections::VecDeque, convert::Into, error::Error, fmt::Debug, net::Ipv4Addr, ops::Deref, sync::Arc, time::{Duration, Instant}};
 
 use data::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unpublish, Unsubscribe};
 use error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, ReceiveMessageError, ReconnectError, SendMessageError, UpdateTimeError};
@@ -182,6 +182,14 @@ impl Debug for Client {
     }
 }
 
+impl Deref for Client {
+    type Target = ClientHandle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
 impl AsRef<ClientHandle> for Client {
     fn as_ref(&self) -> &ClientHandle {
         &self.handle
@@ -211,34 +219,7 @@ impl Client {
     ///
     /// This can be cheaply cloned.
     pub fn handle(&self) -> &ClientHandle {
-        &self.handle
-    }
-
-    /// Returns the current `NetworkTablesTime` for this client.
-    ///
-    /// This can safely be used asynchronously and across different threads.
-    pub fn time(&self) -> Arc<RwLock<NetworkTablesTime>> {
-        self.handle.time()
-    }
-
-    /// Returns an announced topic from its id.
-    pub async fn announced_topic_from_id(&self, id: i32) -> Option<AnnouncedTopic> {
-        self.handle.announced_topic_from_id(id).await
-    }
-
-    /// Returns an announced topic from its name.
-    pub async fn announced_topic_from_name(&self, name: &str) -> Option<AnnouncedTopic> {
-        self.handle.announced_topic_from_name(name).await
-    }
-
-    /// Returns a new topic with a given name.
-    pub fn topic(&self, name: impl ToString) -> Topic {
-        self.handle.topic(name)
-    }
-
-    /// Returns a new collection of topics with the given names.
-    pub fn topics(&self, names: Vec<String>) -> TopicCollection {
-        self.handle.topics(names)
+        self.as_ref()
     }
 
     /// Connects to the `NetworkTables` server.
