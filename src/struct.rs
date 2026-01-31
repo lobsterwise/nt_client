@@ -40,6 +40,8 @@ pub trait StructData {
     }
 
     /// Returns the type name of this struct.
+    ///
+    /// This name should be unique.
     fn struct_type_name() -> String;
 
     /// Returns the struct schema.
