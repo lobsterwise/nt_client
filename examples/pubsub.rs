@@ -31,8 +31,10 @@ fn setup(client: &Client) {
             match subscriber.recv().await {
                 Ok(ReceivedMessage::Announced(topic)) => println!("announced topic: {}", topic.name()),
                 Ok(ReceivedMessage::Updated((topic, value))) => {
-                    let value = String::from_value(value).expect("updated value is a string");
-                    println!("topic {} updated to {value}", topic.name());
+                    match String::from_value(value) {
+                        Some(string) => println!("topic {} updated to {string}", topic.name()),
+                        None => eprintln!("not a string"),
+                    }
                 },
                 Ok(ReceivedMessage::Unannounced { name, .. }) => {
                     println!("topic {name} unannounced");
