@@ -64,7 +64,7 @@ use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic}
 use tracing::{debug, error, info, trace, warn};
 
 #[cfg(feature = "protobuf")]
-use crate::protobuf::ProtobufData;
+use ::protobuf::reflect::FileDescriptor;
 
 #[cfg(feature = "struct")]
 use crate::r#struct::StructData;
@@ -211,10 +211,10 @@ impl ClientHandle {
         self.schema_topic().child(format!("struct:{}", T::struct_type_name()))
     }
 
-    /// Returns a protobuf schema topic for `T`.
+    /// Returns a protobuf schema topic for a file descriptor.
     #[cfg(feature = "protobuf")]
-    pub fn protobuf_schema_topic<T: ProtobufData>(&self) -> Topic {
-        self.schema_topic().child(format!("proto:{}", T::proto_type_name()))
+    pub fn protobuf_schema_topic(&self, descriptor: &FileDescriptor) -> Topic {
+        self.schema_topic().child(format!("proto:{}", descriptor.name()))
     }
 
     /// Returns the `$clients` meta topic.
