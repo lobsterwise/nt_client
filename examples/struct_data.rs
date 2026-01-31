@@ -10,11 +10,18 @@ async fn main() {
 }
 
 fn setup(client: &Client) {
+    // get the schema topic for an ArmFeedForward
+    let schema_topic = client.struct_schema_topic::<ArmFeedforward>();
     let pub_topic = client.topic("/myfeedforward");
     tokio::spawn(async move {
+        // publish struct schema so the server can understand it
+        // a more in-depth example can be found in the `schema` example
+        let schema_publisher = schema_topic.publish(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
+        schema_publisher.set_default(ArmFeedforward::schema()).await.unwrap();
+
         // publish arm feedforward constants (raw binary)
         // set it to retained since the publisher will be dropped after the value is set
-        let publisher = pub_topic.publish::<Struct<ArmFeedforward>>(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
+        let publisher = pub_topic.publish(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
 
         let feedforward = ArmFeedforward {
             k_s: 8.2,
