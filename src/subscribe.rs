@@ -261,7 +261,7 @@ pub struct SubscriptionOptions {
 
 impl SubscriptionOptions {
     /// Converts from a `msgpack` map.
-    pub fn from_msgpack_map(map: &Vec<(rmpv::Value, rmpv::Value)>) -> Option<Self> {
+    pub fn from_msgpack_map(map: Vec<(rmpv::Value, rmpv::Value)>) -> Option<Self> {
         let mut periodic = None;
         let mut all = None;
         let mut topics_only = None;
@@ -269,13 +269,7 @@ impl SubscriptionOptions {
         let extra = HashMap::new();
 
         for (key, value) in map {
-            let key = if let rmpv::Value::String(key) = key {
-                key.as_str()?
-            } else {
-                return None;
-            };
-
-            match key {
+            match key.as_str()? {
                 "periodic" => periodic = value.as_u64().map(Duration::from_secs),
                 "all" => all = value.as_bool(),
                 "topicsonly" => topics_only = value.as_bool(),

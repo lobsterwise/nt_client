@@ -36,7 +36,7 @@ fn setup(client: &Client) {
                 match topic.r#type() {
                     // check to make sure the data type is correct
                     DataType::Struct(type_name) if type_name == &ArmFeedforward::struct_type_name() => {
-                        let feedforward = <Struct<ArmFeedforward>>::from_value(&value).expect("valid feedforward struct").0;
+                        let feedforward = <Struct<ArmFeedforward>>::from_value(value).expect("valid feedforward struct").0;
                         println!("Got feedforward: {feedforward:?}");
                     }
                     _ => println!("Not a feedforward"),

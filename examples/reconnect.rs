@@ -16,7 +16,7 @@ async fn main() {
             loop {
                 match subscriber.recv().await {
                     Ok(ReceivedMessage::Updated((topic, value))) => {
-                        let value = String::from_value(&value).expect("updated value is a string");
+                        let value = String::from_value(value).expect("updated value is a string");
                         println!("topic {} updated to {value}", topic.name());
                     },
                     Err(err) => return Err(ReconnectError::Nonfatal(err.into())),

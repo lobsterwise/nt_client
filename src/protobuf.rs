@@ -21,9 +21,9 @@ impl<T: ProtobufData> NetworkTableData for Protobuf<T> {
         DataType::Protobuf(T::proto_type_name())
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
         match value {
-            rmpv::Value::Binary(bytes) => T::Proto::parse_from_bytes(bytes).ok()
+            rmpv::Value::Binary(bytes) => T::Proto::parse_from_bytes(&bytes).ok()
                 .and_then(T::from_proto)
                 .map(Self),
             _ => None,

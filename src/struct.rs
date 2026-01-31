@@ -18,9 +18,9 @@ impl<T: StructData> NetworkTableData for Struct<T> {
         DataType::Struct(T::struct_type_name())
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
         match value {
-            rmpv::Value::Binary(bytes) => T::unpack(&mut ByteReader::new(bytes)).map(Self),
+            rmpv::Value::Binary(bytes) => T::unpack(&mut ByteReader::new(&bytes)).map(Self),
             _ => None,
         }
     }
@@ -104,9 +104,9 @@ impl <T: StructData, const S: usize> NetworkTableData for [Struct<T>; S] {
         DataType::StructArray(T::struct_type_name())
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
         match value {
-            rmpv::Value::Binary(bytes) => T::unpack_array(&mut ByteReader::new(bytes)).map(|array| array.map(Struct)),
+            rmpv::Value::Binary(bytes) => T::unpack_array(&mut ByteReader::new(&bytes)).map(|array| array.map(Struct)),
             _ => None,
         }
     }

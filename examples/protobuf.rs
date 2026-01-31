@@ -33,7 +33,7 @@ fn setup(client: &Client) {
                 match topic.r#type() {
                     // check to make sure the data type is correct
                     DataType::Protobuf(type_name) if type_name == &Pose2d::proto_type_name() => {
-                        let pose = <Protobuf<Pose2d>>::from_value(&value).expect("valid pose2d struct").0;
+                        let pose = <Protobuf<Pose2d>>::from_value(value).expect("valid pose2d struct").0;
                         println!("Got pose: {pose:?}");
                     }
                     _ => println!("Not a pose2d"),

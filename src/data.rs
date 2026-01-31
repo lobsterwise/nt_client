@@ -47,8 +47,8 @@ macro_rules! impl_data_type {
     // vec<T> to data type with mapper from value to T
     (vec $i: ty => $d: expr ; $v: ident @ $c: block) => {
         impl_data_type!(@ Vec<$i>, $d, [value]{
-            let vec = value.as_array()?;
-            vec.iter()
+            let rmpv::Value::Array(vec) = value else { return None; };
+            vec.into_iter()
                 .map(|$v| $c)
                 .collect::<Option<Vec<$i>>>()
         }, [this]{ rmpv::Value::from_iter(this) });
@@ -72,7 +72,7 @@ macro_rules! impl_data_type {
                 $d
             }
             #[allow(unused_variables)]
-            fn from_value($v: &rmpv::Value) -> Option<Self> {
+            fn from_value($v: rmpv::Value) -> Option<Self> {
                 $f
             }
             fn into_value(self) -> rmpv::Value {
@@ -124,16 +124,28 @@ macro_rules! transparent {
 }
 
 macro_rules! read_from_str_map {
-    ($value: expr, $($str: literal = $pat: pat => $expr: expr),* $(,)?) => {{
-        let map = $value.as_map()?;
-        (
-        $(
-            {
-                let $pat = map.iter().find(|(key, _)| key.as_str().is_some_and(|key| key == "id"))?.1 else { return None; };
-                $expr
+    ($value: expr, $(for $field: ident : $str: literal = $pat: pat => $expr: expr),* $(,)?) => {{
+        let rmpv::Value::Map(map) = $value else { return None; };
+        let ($(mut $field),*) = (
+        $({
+            let $field = None;
+            $field
+        }),*
+        );
+        for (key, value) in map {
+            let key = key.as_str()?;
+            match key {
+            $(
+                $str => {
+                    let $pat = value else { return None; };
+                    $field = Some($expr);
+                }
+            )*
+                _ => return None,
             }
-        ),*
-        )
+        }
+
+        ($($field?),*)
     }};
 }
 
@@ -294,7 +306,7 @@ pub trait NetworkTableData {
     fn data_type() -> DataType;
 
     /// Creates a new piece of data from a generic `MessagePack` value.
-    fn from_value(value: &rmpv::Value) -> Option<Self> where Self: Sized;
+    fn from_value(value: rmpv::Value) -> Option<Self> where Self: Sized;
 
     /// Converts this into a generic `MessagePack` value.
     fn into_value(self) -> rmpv::Value;
@@ -332,8 +344,12 @@ impl_data_type!(u16 [vec => IntArray] => Int; u);
 impl_data_type!(u32 [vec => IntArray] => Int; u);
 impl_data_type!(u64 [vec => IntArray] => Int; u);
 impl_data_type!(f32 [vec => FloatArray] => Float; value @ value.as_f64().map(|num| num as f32));
-impl_data_type!(String [vec => StringArray] => String; value @ value.as_str().map(|str| str.to_owned()));
-impl_data_type!(JsonString => Json; value @ value.as_str().map(|str| JsonString(str.to_owned())));
+impl_data_type!(String [vec => StringArray] => String; value @ if let rmpv::Value::String(str) = value {
+    str.into_str()
+} else {
+    None
+});
+impl_data_type!(JsonString => Json; value @ String::from_value(value).map(Self));
 impl_data_type!(bytes RawData => Raw);
 impl_data_type!(bytes Rpc => Rpc);
 impl_data_type!(rmpv::Value => Msgpack; value @ Some(value.clone()));
@@ -353,12 +369,13 @@ impl NetworkTableData for ConnectedClients {
         DataType::Msgpack
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        let rmpv::Value::Array(array) = value else { return None; };
         let mut clients = Vec::new();
-        for client in value.as_array()? {
+        for client in array {
             let (id, conn) = read_from_str_map!(client,
-                "id" = rmpv::Value::String(ref str) => str.to_string(),
-                "conn" = rmpv::Value::String(ref str) => str.to_string(),
+                for id: "id" = rmpv::Value::String(str) => str.into_str()?,
+                for conn: "conn" = rmpv::Value::String(str) => str.into_str()?,
             );
 
             clients.push(ConnectedClient { id, conn });
@@ -406,19 +423,21 @@ impl NetworkTableData for ClientSubscriptions {
         DataType::Msgpack
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        let rmpv::Value::Array(array) = value else { return None; };
         let mut subscriptions = Vec::new();
-        for subscription in value.as_array()? {
+        for subscription in array {
             let (uid, topics, options) = read_from_str_map!(subscription,
-                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
-                "topics" = rmpv::Value::Array(ref array) => {
+                for uid: "uid" = rmpv::Value::Integer(int) => int.as_i64()?.try_into().ok()?,
+                for topics: "topics" = rmpv::Value::Array(array) => {
                     let mut vec = Vec::new();
                     for value in array {
-                        vec.push(value.as_str()?.to_owned());
+                        let rmpv::Value::String(value) = value else { return None; };
+                        vec.push(value.into_str()?);
                     }
                     vec
                 },
-                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+                for options: "options" = rmpv::Value::Map(map) => SubscriptionOptions::from_msgpack_map(map)?,
             );
             subscriptions.push(ClientSubscription { uid, topics, options });
         }
@@ -465,13 +484,14 @@ impl NetworkTableData for Subscriptions {
         DataType::Msgpack
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        let rmpv::Value::Array(array) = value else { return None; };
         let mut subscriptions = Vec::new();
-        for subscription in value.as_array()? {
+        for subscription in array {
             let (client, subuid, options) = read_from_str_map!(subscription,
-                "client" = rmpv::Value::String(ref str) => str.to_string(),
-                "subuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
-                "options" = rmpv::Value::Map(ref map) => SubscriptionOptions::from_msgpack_map(map)?,
+                for client: "client" = rmpv::Value::String(str) => str.into_str()?,
+                for subuid: "subuid" = rmpv::Value::Integer(int) => int.as_i64()?.try_into().ok()?,
+                for options: "options" = rmpv::Value::Map(map) => SubscriptionOptions::from_msgpack_map(map)?,
             );
             subscriptions.push(Subscription { client, subuid, options });
         }
@@ -521,12 +541,13 @@ impl NetworkTableData for ClientPublishers {
         DataType::Msgpack
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        let rmpv::Value::Array(array) = value else { return None; };
         let mut publishers = Vec::new();
-        for publisher in value.as_array()? {
+        for publisher in array {
             let (uid, topic) = read_from_str_map!(publisher,
-                "uid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
-                "topic" = rmpv::Value::String(ref string) => string.to_string(),
+                for uid: "uid" = rmpv::Value::Integer(int) => int.as_i64()?.try_into().ok()?,
+                for topic: "topic" = rmpv::Value::String(string) => string.into_str()?,
             );
             publishers.push(ClientPublisher { uid, topic });
         }
@@ -568,12 +589,13 @@ impl NetworkTableData for Publishers {
         DataType::Msgpack
     }
 
-    fn from_value(value: &rmpv::Value) -> Option<Self> {
+    fn from_value(value: rmpv::Value) -> Option<Self> {
+        let rmpv::Value::Array(array) = value else { return None; };
         let mut publishers = Vec::new();
-        for publisher in value.as_array()? {
+        for publisher in array {
             let (client, pubuid) = read_from_str_map!(publisher,
-                "client" = rmpv::Value::String(ref string) => string.to_string(),
-                "pubuid" = rmpv::Value::Integer(ref int) => int.as_i64()?.try_into().ok()?,
+                for client: "client" = rmpv::Value::String(string) => string.into_str()?,
+                for pubuid: "pubuid" = rmpv::Value::Integer(int) => int.as_i64()?.try_into().ok()?,
             );
             publishers.push(Publisher { client, pubuid });
         }
