@@ -148,7 +148,7 @@ macro_rules! data {
 
 data! {
     /// Feedforward constants that model a simple arm.
-    pub struct ArmFeedforward("ArmFeedforward", "double ks;double kg;double ka;double dt") for ProtobufArmFeedforward {
+    pub struct ArmFeedforward("ArmFeedforward", "double ks;double kg;double kv;double ka;double dt") for ProtobufArmFeedforward {
         /// The static gain in volts.
         k_s(ks): f64,
         /// The gravity gain in volts.
