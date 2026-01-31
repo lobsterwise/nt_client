@@ -14,7 +14,7 @@ fn setup(client: &Client) {
     tokio::spawn(async move {
         // publish pose2d
         // set it to retained since the publisher will be dropped after the value is set
-        let publisher = pub_topic.publish::<Protobuf<Pose2d>>(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
+        let publisher = pub_topic.publish(Properties { retained: Some(true), ..Default::default() }).await.unwrap();
 
         let pose = Pose2d {
             translation: Translation2d { x: 1.3, y: -0.5 },
