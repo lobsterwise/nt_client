@@ -10,8 +10,13 @@ async fn main() {
 }
 
 fn setup(client: &Client) {
+    let mut schema_manager = client.schema_manager();
     let pub_topic = client.topic("/mypose");
     tokio::spawn(async move {
+        // publish proto schema so the server can understand it
+        // a more in-depth example can be found in the `schema` example
+        schema_manager.publish_proto::<Pose2d>().await.unwrap();
+
         // publish pose2d
         // set it to retained since the publisher will be dropped after the value is set
         let publisher = pub_topic.publish(Properties { retained: Some(true), ..Default::default() }).await.unwrap();

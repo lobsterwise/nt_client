@@ -69,6 +69,9 @@ use ::protobuf::reflect::FileDescriptor;
 #[cfg(feature = "struct")]
 use crate::r#struct::StructData;
 
+#[cfg(any(feature = "struct", feature = "protobuf"))]
+use crate::schema::SchemaManager;
+
 use crate::{error::{ConnectError, ConnectionClosedError, IntoAddrError, PingError, ReceiveMessageError, ReconnectError, SendMessageError, UpdateTimeError}, net::{BinaryData, ClientboundData, ClientboundTextData, PropertiesData, ServerboundMessage, ServerboundTextData, Subscribe, Unpublish, Unsubscribe}};
 
 mod net;
@@ -86,6 +89,9 @@ pub mod r#struct;
 
 #[cfg(feature = "protobuf")]
 pub mod protobuf;
+
+#[cfg(any(feature = "struct", feature = "protobuf"))]
+pub mod schema;
 
 type NTServerSender = mpsc::UnboundedSender<ServerboundMessage>;
 type NTServerReceiver = mpsc::UnboundedReceiver<ServerboundMessage>;
@@ -285,6 +291,16 @@ impl ClientHandle {
     /// Received messages will have the type of [`Publishers`](crate::data::type::Publishers).
     pub fn topic_pubs_meta_topic(&self, topic: impl ToString) -> Topic {
         self.topic(format!("$pub${}", topic.to_string()))
+    }
+
+    /// Returns a new schema manager, composed of `SchemaWriter` and `SchemaWatcher` halves.
+    #[cfg(any(feature = "struct", feature = "protobuf"))]
+    pub fn schema_manager(&self) -> SchemaManager {
+        use std::collections::HashMap;
+
+        use tokio::sync::Mutex;
+
+        SchemaManager::new(Arc::new(Mutex::new(HashMap::new())), self.clone())
     }
 }
 
