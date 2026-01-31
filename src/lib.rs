@@ -214,12 +214,12 @@ impl ClientHandle {
     ///
     /// let client = Client::new(Default::default());
     /// let schema_topic = client.struct_schema_topic::<MyStruct>();
-    /// assert_eq!(schema_topic.name(), "/.schema/mystruct");
+    /// assert_eq!(schema_topic.name(), "/.schema/struct:mystruct");
     /// // publish MyStruct::schema() to schema_topic
     /// ```
     #[cfg(feature = "struct")]
     pub fn struct_schema_topic<T: StructData>(&self) -> Topic {
-        self.schema_topic().child(format!("/{}", T::struct_type_name()))
+        self.schema_topic().child(format!("/struct:{}", T::struct_type_name()))
     }
 
     /// Returns the `$clients` meta topic.
