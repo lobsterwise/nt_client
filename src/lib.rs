@@ -1,5 +1,4 @@
-#![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
+#![warn(missing_docs, rustdoc::missing_crate_level_docs)]
 
 //! A blazingly fast [NetworkTables 4.1][NetworkTables] client.
 //!
