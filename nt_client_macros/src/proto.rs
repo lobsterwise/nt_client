@@ -38,10 +38,10 @@ pub fn expand_derive_protobuf_data(input: DeriveInput) -> syn::Result<TokenStrea
             let proto_field = attrs.field.as_ref().unwrap_or(ident);
             if attrs.nested {
                 quote_spanned! {ident.span()=>
-                    proto.#proto_field = ::protobuf::MessageField::some(<#ty as ::nt_client::protobuf::ProtobufData>::into_proto(self.#ident));
+                    #proto_field: ::protobuf::MessageField::some(<#ty as ::nt_client::protobuf::ProtobufData>::into_proto(self.#ident))
                 }
             } else {
-                quote_spanned!(ident.span()=> proto.#proto_field = self.#ident;)
+                quote_spanned!(ident.span()=> #proto_field: self.#ident)
             }
         });
 
@@ -54,9 +54,10 @@ pub fn expand_derive_protobuf_data(input: DeriveInput) -> syn::Result<TokenStrea
             }
 
             fn into_proto(self) -> Self::Proto {
-                let mut proto = Self::Proto::new();
-                #(#into_proto)*
-                proto
+                Self::Proto {
+                    #(#into_proto,)*
+                    ..::std::default::Default::default()
+                }
             }
         }
     })
