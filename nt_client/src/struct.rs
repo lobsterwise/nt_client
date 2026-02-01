@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 
 use byte::{ByteBuffer, ByteReader};
 
-use crate::data::{DataType, NetworkTableData};
+use crate::{data::{DataType, NetworkTableData}, schema::{PublishSchemaError, SchemaManager}};
 
 pub mod byte;
 pub mod parse;
@@ -46,6 +46,9 @@ pub trait StructData {
 
     /// Returns the struct schema.
     fn schema() -> StructSchema;
+
+    /// Publishes all dependency schemas for this struct.
+    fn publish_dependencies(manager: &mut SchemaManager) -> impl Future<Output = Result<(), PublishSchemaError>> + Send;
 
     /// Puts object contents to `buf`.
     fn pack(self, buf: &mut ByteBuffer);
@@ -171,6 +174,10 @@ mod tests {
                 String::new()
             }
 
+            async fn publish_dependencies(_: &mut SchemaManager) -> Result<(), PublishSchemaError> {
+                Ok(())
+            }
+
             fn pack(self, buf: &mut ByteBuffer) {
                 buf.write_f64(self.f);
                 buf.write_i32(self.u);
@@ -211,6 +218,10 @@ mod tests {
 
             fn struct_type_name() -> String {
                 String::new()
+            }
+
+            async fn publish_dependencies(_: &mut SchemaManager) -> Result<(), PublishSchemaError> {
+                Ok(())
             }
 
             fn pack(self, buf: &mut ByteBuffer) {

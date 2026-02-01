@@ -24,6 +24,11 @@ pub fn expand_derive_struct_data(input: DeriveInput) -> syn::Result<TokenStream>
         .collect::<syn::Result<Vec<_>>>()?;
 
     let field_idents = fields.iter().map(|(ident, _, _)| quote! { #ident });
+    let publish_deps = fields.iter()
+        .filter(|(_, _, attr)| attr.nested)
+        .map(|(_, ty, _)| {
+            quote_spanned!(ident.span()=> manager.publish_struct::<#ty>().await?;)
+        });
     let pack = fields.iter()
         .map(|(ident, ty, attrs)| {
             if attrs.nested {
@@ -55,6 +60,11 @@ pub fn expand_derive_struct_data(input: DeriveInput) -> syn::Result<TokenStream>
                 ::nt_client::r#struct::StructSchema(
                     <str as ::std::string::ToString>::to_string(#schema)
                 )
+            }
+
+            async fn publish_dependencies(manager: &mut ::nt_client::schema::SchemaManager) -> ::std::result::Result<(), ::nt_client::schema::PublishSchemaError> {
+                #(#publish_deps)*
+                ::std::result::Result::Ok(())
             }
 
             fn pack(self, buf: &mut ::nt_client::r#struct::byte::ByteBuffer) {

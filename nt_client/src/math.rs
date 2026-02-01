@@ -6,7 +6,7 @@ use crate::protobuf::{ProtobufData, controller::*, geometry2d::*, geometry3d::*,
 use nt_client_macros::ProtobufData;
 
 #[cfg(feature = "struct")]
-use crate::r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}};
+use crate::{schema::PublishSchemaError, r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}}};
 #[cfg(feature = "struct")]
 use nt_client_macros::StructData;
 
@@ -310,6 +310,13 @@ impl<const S: usize, const I: usize, const O: usize> StructData for LinearSystem
         format!("LinearSystem__{}_{}_{}", S, I, O)
     }
 
+    async fn publish_dependencies(manager: &mut crate::schema::SchemaManager) -> Result<(), PublishSchemaError> {
+        manager.publish_struct::<Matrix<S, S>>().await?;
+        manager.publish_struct::<Matrix<S, I>>().await?;
+        manager.publish_struct::<Matrix<O, S>>().await?;
+        manager.publish_struct::<Matrix<O, I>>().await
+    }
+
     fn pack(self, buf: &mut ByteBuffer) {
         self.a.pack(buf);
         self.b.pack(buf);
@@ -369,6 +376,10 @@ impl<const R: usize, const C: usize> StructData for Matrix<R, C> {
 
     fn struct_type_name() -> String {
         format!("Matrix__{}_{}", R, C)
+    }
+
+    async fn publish_dependencies(_: &mut crate::schema::SchemaManager) -> Result<(), PublishSchemaError> {
+        Ok(())
     }
 
     fn pack(self, buf: &mut ByteBuffer) {
@@ -685,6 +696,10 @@ impl<const N: usize> StructData for SwerveDriveKinematics<N> {
         format!("SwerveDriveKinematics__{}", N)
     }
 
+    async fn publish_dependencies(manager: &mut crate::schema::SchemaManager) -> Result<(), PublishSchemaError> {
+        manager.publish_struct::<Translation2d>().await
+    }
+
     fn pack(self, buf: &mut ByteBuffer) {
         Translation2d::pack_iter(self.modules, buf);
     }
@@ -956,6 +971,10 @@ impl<const N: usize> StructData for Vector<N> {
 
     fn struct_type_name() -> String {
         format!("Vector__{}", N)
+    }
+
+    async fn publish_dependencies(_: &mut crate::schema::SchemaManager) -> Result<(), PublishSchemaError> {
+        Ok(())
     }
 
     fn pack(self, buf: &mut ByteBuffer) {

@@ -187,7 +187,7 @@ impl ClientHandle {
     /// # Examples
     ///
     /// ```
-    /// use nt_client::{Client, data::DataType, r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}}};
+    /// use nt_client::{Client, data::DataType, schema::{PublishSchemaError, SchemaManager}, r#struct::{StructData, StructSchema, byte::{ByteBuffer, ByteReader}}};
     ///
     /// struct MyStruct(pub i32);
     ///
@@ -198,6 +198,10 @@ impl ClientHandle {
     ///
     ///     fn schema() -> StructSchema {
     ///         StructSchema("int32 number".to_owned())
+    ///     }
+    ///
+    ///     async fn publish_dependencies(_: &mut SchemaManager) -> Result<(), PublishSchemaError> {
+    ///         Ok(())
     ///     }
     ///
     ///     fn pack(self, buf: &mut ByteBuffer) {

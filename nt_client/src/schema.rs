@@ -73,7 +73,7 @@ impl SchemaManager {
             }
         }
 
-        // TODO: publish nested structs
+        T::publish_dependencies(self).await?;
 
         let publisher = self.handle.struct_schema_topic::<T>().publish::<StructSchema>(Properties { retained: Some(true), ..Default::default() }).await?;
         publisher.set_default(T::schema()).await?;
