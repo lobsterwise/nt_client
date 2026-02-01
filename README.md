@@ -40,5 +40,7 @@ Contributions are welcome! You can contribute by:
 - Creating a [pull request](https://github.com/DatAsianBoi123/nt_client/compare)
 
 ---
-See the `/examples` directory for examples on how to use this crate.
+See the `nt_client/examples` directory for examples on how to use this crate.
+
+You can run examples by executing `cargo run -p nt_client --example <example name>`.
 
