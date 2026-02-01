@@ -52,6 +52,21 @@ macro_rules! primitives {
                 read.$r()
             }
         }
+        impl<const N: usize> private::Sealed for [$ty; N] {}
+        impl<const N: usize> BytePrimitive for [$ty; N] {
+            fn write(self, buf: &mut ByteBuffer) {
+                for item in self {
+                    buf.$w(item)
+                }
+            }
+            fn read(read: &mut ByteReader) -> Option<Self> {
+                let mut arr = [Default::default(); N];
+                for elem in &mut arr {
+                    *elem = read.$r()?;
+                }
+                Some(arr)
+            }
+        }
         )*
     };
 }
