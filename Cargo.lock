@@ -340,6 +340,7 @@ version = "0.4.0"
 dependencies = [
  "futures-util",
  "lazy_static",
+ "nt_client_macros",
  "protobuf",
  "protobuf-codegen",
  "protoc-bin-vendored",
@@ -355,6 +356,15 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "nt_client_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

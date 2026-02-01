@@ -16,8 +16,8 @@ path = "src/lib.rs"
 
 [features]
 math = []
-struct = []
-protobuf = ["dep:protobuf", "dep:protobuf-codegen", "dep:protoc-bin-vendored"]
+struct = ["nt_client_macros/struct"]
+protobuf = ["nt_client_macros/protobuf", "dep:protobuf", "dep:protobuf-codegen", "dep:protoc-bin-vendored"]
 publish_bypass = []
 
 [[example]]
@@ -29,6 +29,7 @@ name = "protobuf"
 required-features = ["protobuf", "math"]
 
 [dependencies]
+nt_client_macros = { path = "../nt_client_macros" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 rand = "0.9"
 rmp-serde = "1.3"

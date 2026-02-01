@@ -53,6 +53,8 @@
 //! [NetworkTables]: https://github.com/wpilibsuite/allwpilib/blob/main/ntcore/doc/networktables4.adoc
 //! [issue #7680]: https://github.com/wpilibsuite/allwpilib/issues/7680
 
+extern crate self as nt_client;
+
 use core::panic;
 use std::{collections::VecDeque, convert::Into, error::Error, fmt::Debug, net::Ipv4Addr, ops::Deref, sync::Arc, time::{Duration, Instant}};
 

@@ -1,0 +1,22 @@
+[package]
+name = "nt_client_macros"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+description = "Proc macros used by the nt_client crate"
+repository.workspace = true
+license.workspace = true
+
+[features]
+struct = []
+protobuf = []
+
+[lib]
+name = "nt_client_macros"
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
