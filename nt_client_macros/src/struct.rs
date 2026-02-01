@@ -11,6 +11,8 @@ pub fn expand_derive_struct_data(input: DeriveInput) -> syn::Result<TokenStream>
         Data::Union(data) => return Err(syn::Error::new_spanned(data.union_token, "unions are not supported")),
     };
 
+    let type_name = type_name.unwrap_or_else(|| LitStr::new(&ident.to_string(), ident.span()));
+
     let fields = data.fields.into_iter()
         .map(|field| {
             let span = field.span();
@@ -69,7 +71,7 @@ pub fn expand_derive_struct_data(input: DeriveInput) -> syn::Result<TokenStream>
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StructContainerAttributes {
-    type_name: LitStr,
+    type_name: Option<LitStr>,
     schema: LitStr,
 }
 
@@ -112,7 +114,7 @@ impl StructContainerAttributes {
         }
 
         Ok(Self {
-            type_name: type_name.ok_or_else(|| syn::Error::new(Span::call_site(), "missing structdata attribute `type_name`"))?,
+            type_name,
             schema: schema.ok_or_else(|| syn::Error::new(Span::call_site(), "missing structdata attribute `schema`"))?,
         })
     }
