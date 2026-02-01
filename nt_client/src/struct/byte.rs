@@ -1,5 +1,9 @@
 //! Byte buffer reading/writing to pack/unpack NetworkTables `struct` types.
 
+mod private {
+    pub trait Sealed {}
+}
+
 macro_rules! write {
     ($($(#[$m: meta])* $vis: vis fn $ident: ident => $ty: ty ;)*) => {
         $(
@@ -31,6 +35,22 @@ macro_rules! read {
             let value = <$ty>::from_le_bytes(self.view[self.cursor..at].try_into().expect("byte size correct"));
             self.cursor = at;
             Some(value)
+        }
+        )*
+    };
+}
+
+macro_rules! primitives {
+    ($($ty: ty as $w: ident, $r: ident;)*) => {
+        $(
+        impl private::Sealed for $ty {}
+        impl BytePrimitive for $ty {
+            fn write(self, buf: &mut ByteBuffer) {
+                buf.$w(self);
+            }
+            fn read(read: &mut ByteReader) -> Option<Self> {
+                read.$r()
+            }
         }
         )*
     };
@@ -184,6 +204,29 @@ impl<'a> ByteReader<'a> {
         pub fn read_f32 => f32;
         pub fn read_f64 => f64;
     }
+}
+
+/// Primitive data that can be directly written and read from a [`ByteBuffer`] and [`ByteReader`].
+///
+/// This trait is mostly used by the `nt_client_macros` crate.
+///
+/// This trait is **sealed** and cannot be implemented by downstream crates.
+pub trait BytePrimitive: private::Sealed {
+    /// Writes this primitive to a byte buffer.
+    fn write(self, buf: &mut ByteBuffer);
+
+    /// Reads this primitive from a byte reader.
+    fn read(read: &mut ByteReader) -> Option<Self> where Self: Sized;
+}
+
+primitives! {
+    i8 as write_i8, read_i8;
+    i16 as write_i16, read_i16;
+    i32 as write_i32, read_i32;
+    i64 as write_i64, read_i64;
+    isize as write_isize, read_isize;
+    f32 as write_f32, read_f32;
+    f64 as write_f64, read_f64;
 }
 
 #[cfg(test)]
