@@ -1,3 +1,7 @@
+//! Derive macros for the `nt_client` crate.
+//!
+//! Currently not designed to be used publicly.
+
 #[cfg(any(feature = "struct", feature = "protobuf"))]
 use proc_macro::TokenStream;
 
