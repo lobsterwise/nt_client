@@ -61,7 +61,7 @@ use std::{collections::VecDeque, convert::Into, error::Error, fmt::Debug, net::I
 use futures_util::{stream::{SplitSink, SplitStream}, Future, SinkExt, StreamExt, TryStreamExt};
 use time::ext::InstantExt;
 use tokio::{net::TcpStream, select, sync::{broadcast, mpsc, Notify, RwLock}, task::JoinHandle, time::{interval, timeout}};
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, Bytes, ClientRequestBuilder, Message, http::{Response, Uri}}};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::{self, ClientRequestBuilder, Message, http::{Response, Uri}}};
 use topic::{collection::TopicCollection, AnnouncedTopic, AnnouncedTopics, Topic};
 use tracing::{debug, error, info, trace, warn};
 
@@ -535,7 +535,7 @@ impl Client {
                                 };
                                 rmp_serde::to_vec(&binary).map_err(|err| err.into()).map(|bytes| Message::Binary(bytes.into()))
                             },
-                            ServerboundMessage::Ping => Ok(Message::Ping(Bytes::new())),
+                            ServerboundMessage::Ping => Ok(Message::Ping(Vec::new())),
                         };
                         match packet {
                             Ok(packet) => {
